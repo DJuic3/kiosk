@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Power bank">
+  <rect width="200" height="200" rx="24" fill="#E8F5EE"/>
+  <rect x="45" y="55" width="110" height="70" rx="12" fill="#1A1A1A"/>
+  <rect x="55" y="68" width="50" height="10" rx="3" fill="#008C46"/>
+  <rect x="55" y="84" width="35" height="8" rx="2" fill="#444"/>
+  <circle cx="135" cy="80" r="8" fill="#333"/>
+  <circle cx="135" cy="80" r="3" fill="#008C46"/>
+  <rect x="70" y="125" width="20" height="12" rx="2" fill="#333"/>
+  <rect x="100" y="125" width="20" height="12" rx="2" fill="#333"/>
+  <text x="100" y="170" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#145A32">10,000 mAh</text>
+</svg>

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Data voucher">
+  <rect width="200" height="200" rx="24" fill="#EEF6FF"/>
+  <rect x="40" y="55" width="120" height="80" rx="10" fill="#0D47A1"/>
+  <text x="100" y="95" text-anchor="middle" font-family="system-ui,sans-serif" font-size="26" font-weight="800" fill="#fff">1GB</text>
+  <text x="100" y="118" text-anchor="middle" font-family="system-ui,sans-serif" font-size="11" font-weight="600" fill="#BBDEFB">DATA BUNDLE</text>
+  <text x="100" y="168" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#0D47A1">VOUCHER</text>
+</svg>

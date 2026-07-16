@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="USB-C wall charger">
+  <rect width="200" height="200" rx="24" fill="#FFF4E5"/>
+  <rect x="70" y="48" width="60" height="70" rx="8" fill="#2C2C2C"/>
+  <rect x="82" y="58" width="36" height="28" rx="3" fill="#555"/>
+  <circle cx="100" cy="98" r="6" fill="#008C46"/>
+  <rect x="88" y="118" width="24" height="28" rx="3" fill="#444"/>
+  <rect x="94" y="146" width="12" height="10" rx="1" fill="#666"/>
+  <text x="100" y="178" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#8A5A00">20W CHARGER</text>
+</svg>

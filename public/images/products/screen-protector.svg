@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Screen protector">
+  <rect width="200" height="200" rx="24" fill="#F0FBFF"/>
+  <rect x="68" y="40" width="64" height="110" rx="10" fill="#B8D4E8" opacity="0.85"/>
+  <rect x="74" y="50" width="52" height="80" rx="4" fill="#E8F4FC" stroke="#7BA3C4" stroke-width="2"/>
+  <path d="M90 70l20 20-8 8-12-12" fill="none" stroke="#008C46" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="100" y="178" text-anchor="middle" font-family="system-ui,sans-serif" font-size="12" font-weight="700" fill="#2A6A8A">SCREEN GLASS</text>
+</svg>

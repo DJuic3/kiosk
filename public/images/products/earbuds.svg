@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Wired earbuds">
+  <rect width="200" height="200" rx="24" fill="#FFF0F3"/>
+  <circle cx="70" cy="70" r="22" fill="#222"/>
+  <circle cx="130" cy="70" r="22" fill="#222"/>
+  <circle cx="70" cy="70" r="10" fill="#555"/>
+  <circle cx="130" cy="70" r="10" fill="#555"/>
+  <path d="M70 92c0 30 15 40 30 45s30-15 30-45" fill="none" stroke="#222" stroke-width="4"/>
+  <rect x="92" y="130" width="16" height="24" rx="4" fill="#333"/>
+  <text x="100" y="178" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#8B2942">EARBUDS</text>
+</svg>

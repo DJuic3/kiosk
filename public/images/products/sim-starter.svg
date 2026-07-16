@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Starter SIM card">
+  <rect width="200" height="200" rx="24" fill="#E8F5EE"/>
+  <rect x="48" y="40" width="104" height="120" rx="10" fill="#145A32"/>
+  <rect x="58" y="52" width="84" height="56" rx="4" fill="#C8A84B"/>
+  <rect x="66" y="60" width="28" height="20" rx="2" fill="#145A32" opacity="0.35"/>
+  <rect x="100" y="60" width="28" height="20" rx="2" fill="#145A32" opacity="0.35"/>
+  <rect x="66" y="86" width="28" height="14" rx="2" fill="#145A32" opacity="0.35"/>
+  <rect x="100" y="86" width="28" height="14" rx="2" fill="#145A32" opacity="0.35"/>
+  <circle cx="100" cy="132" r="10" fill="#fff" opacity="0.9"/>
+  <text x="100" y="175" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#145A32">STARTER SIM</text>
+</svg>

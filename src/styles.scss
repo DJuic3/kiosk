@@ -1,0 +1,101 @@
+:root {
+  --primary: #1a35a3;
+  --primary-dark: #122678;
+  --primary-soft: #e8ecf8;
+  --accent: #e30613;
+  --bg: #eef1f8;
+  --surface: #ffffff;
+  --text: #12182b;
+  --text-muted: #5a6480;
+  --border: #d0d6e8;
+  --shadow: 0 12px 32px rgba(26, 53, 163, 0.1);
+  --shadow-lg: 0 20px 48px rgba(18, 38, 120, 0.16);
+  --success: #1b7a3d;
+  --warning: #b86e00;
+  --radius: 20px;
+  --font: 'Plus Jakarta Sans', system-ui, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  font-size: 16px;
+  color: var(--text);
+  background:
+    radial-gradient(ellipse at top left, rgba(26, 53, 163, 0.06), transparent 40%),
+    var(--bg);
+  -webkit-font-smoothing: antialiased;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+img {
+  display: block;
+}
+
+.page {
+  flex: 1;
+  padding: 28px 36px 36px;
+}
+
+.page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+.page__header h1 {
+  margin: 0 0 8px;
+  font-size: clamp(1.9rem, 3.2vw, 2.5rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.page__header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 1.08rem;
+  line-height: 1.45;
+  max-width: 42ch;
+}
+
+.page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 28px;
+}
+
+@media (max-width: 768px) {
+  .page {
+    padding: 18px;
+  }
+
+  .page__header {
+    flex-direction: column;
+  }
+}

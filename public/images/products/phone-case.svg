@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Phone case">
+  <rect width="200" height="200" rx="24" fill="#F5EEFF"/>
+  <rect x="65" y="35" width="70" height="120" rx="14" fill="#5B2C8A"/>
+  <rect x="72" y="48" width="56" height="88" rx="4" fill="#2D1B45"/>
+  <circle cx="100" cy="145" r="6" fill="#2D1B45"/>
+  <text x="100" y="178" text-anchor="middle" font-family="system-ui,sans-serif" font-size="13" font-weight="700" fill="#5B2C8A">PHONE CASE</text>
+</svg>
