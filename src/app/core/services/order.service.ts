@@ -4,12 +4,13 @@ import { Observable, of, delay, map } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { ApiResponse } from '../models/api-response.model';
 import { CartSummary } from '../models/cart.model';
-import { DispenseResult, Order } from '../models/order.model';
+import { CreditNote, DispenseResult, FiscalReceipt, Order } from '../models/order.model';
 import { PaymentIntent, PaymentMethod } from '../models/payment.model';
 
 @Injectable({ providedIn: 'root' })
 export class OrderService {
   private readonly http = inject(HttpClient);
+  private failOnceForDemo = true;
 
   createOrder(cart: CartSummary): Observable<Order> {
     const payload = {
@@ -34,6 +35,7 @@ export class OrderService {
         currency: cart.currency,
         status: 'reserved',
         createdAt: new Date().toISOString(),
+        receiptNumber: `RCP-${Math.floor(10000 + Math.random() * 89999)}`,
       };
       return of(order).pipe(delay(400));
     }
@@ -90,34 +92,81 @@ export class OrderService {
       .pipe(map((res) => res.data));
   }
 
-  dispense(orderId: string): Observable<DispenseResult[]> {
+  /** Fiscalise order immediately after payment — before any dispense. */
+  fiscaliseOrder(order: Order): Observable<Order> {
     if (environment.useMockData) {
-      return of([
-        { slotCode: 'A1', productName: 'Item', status: 'success' as const },
-      ]).pipe(delay(2000));
+      const fiscal: FiscalReceipt = {
+        fiscalNumber: `FD-${Math.floor(1e8 + Math.random() * 9e8)}`,
+        issuedAt: new Date().toISOString(),
+        provider: 'ZIMRA Virtual Fiscal Gateway (demo)',
+        qrPayload: `ZIMRA|${order.id}|${order.total}|${order.currency}`,
+      };
+      return of({
+        ...order,
+        status: 'fiscalised' as const,
+        receiptNumber: order.receiptNumber ?? `RCP-${Date.now()}`,
+        fiscalReceipt: fiscal,
+      }).pipe(delay(900));
     }
 
     return this.http
-      .post<ApiResponse<DispenseResult[]>>(
-        `${environment.edgeApiUrl}/dispense`,
-        { orderId },
-      )
+      .post<ApiResponse<Order>>(`${environment.apiBaseUrl}/orders/${order.id}/fiscalise`, {})
       .pipe(map((res) => res.data));
   }
 
-  dispenseOrder(order: Order): Observable<DispenseResult[]> {
+  /**
+   * Dispense with camera/sensor verification.
+   * Demo: first attempt fails the last unit once, then retries succeed.
+   */
+  dispenseOrder(order: Order, attempt = 1): Observable<DispenseResult[]> {
     if (environment.useMockData) {
-      const results: DispenseResult[] = order.lines.flatMap((line) =>
+      const units = order.lines.flatMap((line) =>
         Array.from({ length: line.quantity }, () => ({
           slotCode: line.product.slotCode,
           productName: line.product.name,
-          status: 'success' as const,
         })),
       );
-      return of(results).pipe(delay(2500));
+
+      const shouldFailDemo = this.failOnceForDemo && attempt === 1 && units.length > 0;
+      if (shouldFailDemo) {
+        this.failOnceForDemo = false;
+      }
+
+      const results: DispenseResult[] = units.map((unit, index) => {
+        const failThis = shouldFailDemo && index === units.length - 1;
+        return {
+          ...unit,
+          attempts: attempt,
+          status: failThis ? ('failed' as const) : ('success' as const),
+          message: failThis
+            ? 'Camera: empty tray — product did not drop'
+            : 'Camera: product detected in tray',
+        };
+      });
+
+      return of(results).pipe(delay(attempt === 1 ? 2200 : 1800));
     }
 
-    return this.dispense(order.id);
+    return this.http
+      .post<ApiResponse<DispenseResult[]>>(`${environment.edgeApiUrl}/dispense`, {
+        orderId: order.id,
+        attempt,
+      })
+      .pipe(map((res) => res.data));
+  }
+
+  createCreditNote(order: Order, reason: string, amount?: number): Observable<CreditNote> {
+    const note: CreditNote = {
+      id: `CN-${Date.now()}`,
+      orderId: order.id,
+      receiptNumber: order.receiptNumber ?? order.id,
+      amount: amount ?? order.total,
+      currency: order.currency,
+      reason,
+      status: 'refunded',
+      createdAt: new Date().toISOString(),
+    };
+    return of(note).pipe(delay(800));
   }
 
   completeOrder(orderId: string): Observable<Order> {

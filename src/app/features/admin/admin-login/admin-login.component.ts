@@ -133,7 +133,7 @@ export class AdminLoginComponent {
 
   constructor() {
     if (this.auth.isAuthenticated()) {
-      void this.router.navigate(['/admin']);
+      void this.router.navigate(['/admin/overview']);
     }
   }
 
@@ -142,6 +142,6 @@ export class AdminLoginComponent {
       this.error.set('Invalid username or password.');
       return;
     }
-    void this.router.navigate(['/admin']);
+    void this.router.navigate(['/admin/overview']);
   }
 }

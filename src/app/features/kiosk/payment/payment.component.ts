@@ -23,7 +23,7 @@ import { CurrencyFormatPipe } from '../../../shared/pipes/currency-format.pipe';
             @case ('confirmed') {
               <div class="success-icon">✓</div>
               <h1>Payment confirmed</h1>
-              <p>Preparing your items...</p>
+              <p>Issuing fiscal receipt before dispense…</p>
             }
             @case ('declined') {
               <div class="error-icon">✕</div>
@@ -186,8 +186,8 @@ export class PaymentComponent implements OnInit, OnDestroy {
         this.status.set('confirmed');
         this.clearTimer();
         setTimeout(() => {
-          this.session.setStep('dispensing');
-          void this.router.navigate(['/dispensing']);
+          this.session.setStep('fiscal');
+          void this.router.navigate(['/fiscal-receipt']);
         }, 1200);
       },
       error: () => this.status.set('declined'),

@@ -1,7 +1,8 @@
 import { CurrencyPipe, UpperCasePipe } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AdminInventoryItem } from '../../../core/models/admin.model';
 import {
   AdminDataService,
@@ -47,42 +48,31 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
           </article>
         </div>
 
-        <div class="filters">
-          <button
-            type="button"
-            [class.active]="filter() === 'all'"
-            (click)="filter.set('all')"
-          >
-            All
-          </button>
-          <button
-            type="button"
-            [class.active]="filter() === 'ok'"
-            (click)="filter.set('ok')"
-          >
-            OK
-          </button>
-          <button
-            type="button"
-            [class.active]="filter() === 'low'"
-            (click)="filter.set('low')"
-          >
-            Low
-          </button>
-          <button
-            type="button"
-            [class.active]="filter() === 'out'"
-            (click)="filter.set('out')"
-          >
-            Out
-          </button>
+        <div class="filter-block">
+          <label class="filter-field search-field">
+            Search
+            <input
+              type="search"
+              [ngModel]="searchQuery()"
+              (ngModelChange)="searchQuery.set($event)"
+              placeholder="Name, SKU, slot…"
+            />
+          </label>
+          <label class="filter-field">
+            Status
+            <select [ngModel]="filter()" (ngModelChange)="onStatusFilter($event)">
+              @for (f of statusFilters; track f.id) {
+                <option [value]="f.id">{{ f.label }}</option>
+              }
+            </select>
+          </label>
         </div>
 
         <div class="card-grid">
           @for (item of filteredInventory(); track item.sku) {
             <article class="inv-card" [attr.data-status]="item.status">
               <div class="inv-card__top">
-                @if (productImage(item.sku); as img) {
+                @if (itemImage(item); as img) {
                   <img [src]="img" [alt]="item.name" />
                 } @else {
                   <div class="inv-card__placeholder">{{ item.slotCode }}</div>
@@ -108,7 +98,7 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
               </div>
             </article>
           } @empty {
-            <div class="empty">No inventory items match this filter.</div>
+            <div class="empty">No inventory items match this search or filter.</div>
           }
         </div>
       }
@@ -129,7 +119,7 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
         <div class="view-layout">
           <article class="view-hero" [attr.data-status]="item.status">
             <div class="view-hero__media">
-              @if (productImage(item.sku); as img) {
+              @if (itemImage(item); as img) {
                 <img [src]="img" [alt]="item.name" />
               } @else {
                 <div class="inv-card__placeholder large">{{ item.slotCode }}</div>
@@ -192,8 +182,8 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
           <aside class="edit-preview">
             <div class="preview-card" [attr.data-status]="previewStatus()">
               <div class="preview-card__media">
-                @if (productImage(form.sku); as img) {
-                  <img [src]="img" [alt]="form.name || 'Product'" />
+                @if (form.imageUrl) {
+                  <img [src]="form.imageUrl" [alt]="form.name || 'Product'" />
                 } @else {
                   <div class="inv-card__placeholder large">{{ form.slotCode || '—' }}</div>
                 }
@@ -260,7 +250,40 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
 
             <section class="form-section">
               <div class="form-section__head">
-                <h3>2. Slot &amp; pricing</h3>
+                <h3>2. Product image</h3>
+                <p>Upload a photo or graphic shown on the kiosk and in admin</p>
+              </div>
+              <div class="image-upload">
+                <div class="image-upload__preview">
+                  @if (form.imageUrl) {
+                    <img [src]="form.imageUrl" [alt]="form.name || 'Preview'" />
+                  } @else {
+                    <span>No image yet</span>
+                  }
+                </div>
+                <div class="image-upload__actions">
+                  <label class="upload-btn">
+                    Choose image
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml,image/gif"
+                      (change)="onImageSelected($event)"
+                    />
+                  </label>
+                  @if (form.imageUrl) {
+                    <button type="button" class="clear-image" (click)="clearImage()">Remove image</button>
+                  }
+                  <em class="field-hint">PNG, JPG, WEBP or SVG. Preview updates instantly.</em>
+                  @if (imageError()) {
+                    <em class="field-error">{{ imageError() }}</em>
+                  }
+                </div>
+              </div>
+            </section>
+
+            <section class="form-section">
+              <div class="form-section__head">
+                <h3>3. Slot &amp; pricing</h3>
                 <p>Where it lives in the machine and what it costs</p>
               </div>
               <div class="form-grid">
@@ -277,7 +300,7 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
 
             <section class="form-section">
               <div class="form-section__head">
-                <h3>3. Stock levels</h3>
+                <h3>4. Stock levels</h3>
                 <p>On-hand quantity, tray capacity and low-stock threshold</p>
               </div>
               <div class="form-grid">
@@ -401,27 +424,54 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
     .summary-card.warn strong { color: var(--warning); }
     .summary-card.danger strong { color: #c62828; }
 
-    .filters {
+    .filter-block {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
+      align-items: flex-end;
+      gap: 12px;
       margin-bottom: 16px;
     }
 
-    .filters button {
-      min-height: 38px;
+    .filter-field {
+      display: grid;
+      gap: 6px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+
+    .search-field {
+      flex: 1;
+      min-width: min(280px, 100%);
+    }
+
+    .filter-field input,
+    .filter-field select {
+      min-height: 44px;
       padding: 0 14px;
-      border: 1px solid var(--border);
-      border-radius: 999px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
       background: #fff;
+      font: inherit;
+      font-size: 0.95rem;
       font-weight: 700;
+      color: var(--text);
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
+    .filter-field select {
+      min-width: 160px;
       cursor: pointer;
     }
 
-    .filters button.active {
-      background: var(--primary);
+    .filter-field input:focus,
+    .filter-field select:focus {
+      outline: none;
       border-color: var(--primary);
-      color: #fff;
+      box-shadow: 0 0 0 3px var(--primary-soft);
     }
 
     .card-grid {
@@ -886,6 +936,80 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
       color: var(--text-muted);
     }
 
+    .field-error {
+      font-style: normal;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: #c62828;
+    }
+
+    .image-upload {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .image-upload__preview {
+      display: grid;
+      place-items: center;
+      width: 140px;
+      height: 140px;
+      border-radius: 16px;
+      border: 2px dashed var(--border);
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    .image-upload__preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #fff;
+    }
+
+    .image-upload__preview span {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-align: center;
+      padding: 12px;
+    }
+
+    .image-upload__actions {
+      display: grid;
+      gap: 10px;
+      justify-items: start;
+    }
+
+    .upload-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 18px;
+      border-radius: 12px;
+      background: var(--primary);
+      color: #fff;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .upload-btn input {
+      display: none;
+    }
+
+    .clear-image {
+      min-height: 38px;
+      padding: 0 14px;
+      border: 1px solid #f5c2c7;
+      border-radius: 999px;
+      background: #fff;
+      color: #c62828;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
     .stepper {
       display: grid;
       grid-template-columns: 44px 1fr 44px;
@@ -966,7 +1090,8 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
       .view-layout,
       .view-hero,
       .edit-layout,
-      .form-grid {
+      .form-grid,
+      .image-upload {
         grid-template-columns: 1fr;
       }
 
@@ -978,21 +1103,60 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
 })
 export class AdminInventoryPanelComponent {
   private readonly data = inject(AdminDataService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   private readonly inventory = toSignal(this.data.getInventory(), { initialValue: [] as AdminInventoryItem[] });
+  private readonly queryParams = toSignal(this.route.queryParamMap);
 
-  readonly Math = Math;
   readonly categories = CATEGORIES;
   readonly mode = signal<InventoryMode>('index');
   readonly selected = signal<AdminInventoryItem | null>(null);
   readonly filter = signal<StockFilter>('all');
+  readonly searchQuery = signal('');
   readonly formError = signal('');
+  readonly imageError = signal('');
   readonly editingSku = signal<string | null>(null);
 
+  readonly statusFilters: { id: StockFilter; label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'ok', label: 'OK' },
+    { id: 'low', label: 'Low' },
+    { id: 'out', label: 'Out' },
+  ];
+
+  constructor() {
+    effect(() => {
+      const params = this.queryParams();
+      const items = this.inventory();
+      if (!params) {
+        return;
+      }
+      this.applyRoute(params.get('id'), params.get('mode'), items);
+    });
+  }
+
+  readonly Math = Math;
+
   readonly filteredInventory = computed(() => {
-    const items = this.inventory();
     const f = this.filter();
-    return f === 'all' ? items : items.filter((i) => i.status === f);
+    const query = this.searchQuery().trim().toLowerCase();
+    return this.inventory().filter((item) => {
+      const statusOk = f === 'all' || item.status === f;
+      if (!statusOk) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+      return (
+        item.name.toLowerCase().includes(query) ||
+        item.sku.toLowerCase().includes(query) ||
+        item.slotCode.toLowerCase().includes(query) ||
+        item.category.toLowerCase().includes(query) ||
+        this.categoryLabel(item.category).toLowerCase().includes(query)
+      );
+    });
   });
 
   readonly summary = computed(() => {
@@ -1007,8 +1171,43 @@ export class AdminInventoryPanelComponent {
 
   form = this.blankForm();
 
-  productImage(sku: string): string | null {
-    return MOCK_PRODUCTS.find((p) => p.sku === sku)?.imageUrl ?? null;
+  onStatusFilter(value: string): void {
+    this.filter.set(value as StockFilter);
+  }
+
+  itemImage(item: AdminInventoryItem): string | null {
+    return item.imageUrl || MOCK_PRODUCTS.find((p) => p.sku === item.sku)?.imageUrl || null;
+  }
+
+  onImageSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) {
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      this.imageError.set('Please choose an image file.');
+      return;
+    }
+    if (file.size > 2_500_000) {
+      this.imageError.set('Image must be under 2.5 MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      this.form.imageUrl = typeof reader.result === 'string' ? reader.result : null;
+      this.imageError.set('');
+    };
+    reader.onerror = () => {
+      this.imageError.set('Could not read that image. Try another file.');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  clearImage(): void {
+    this.form.imageUrl = null;
+    this.imageError.set('');
   }
 
   categoryLabel(category: string): string {
@@ -1070,45 +1269,93 @@ export class AdminInventoryPanelComponent {
   }
 
   cancelEdit(): void {
-    if (this.mode() === 'edit' && this.selected()) {
-      this.mode.set('view');
-      this.formError.set('');
+    const selected = this.selected();
+    if (this.mode() === 'edit' && selected) {
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { id: selected.sku },
+      });
       return;
     }
     this.backToIndex();
   }
 
   openCreate(): void {
-    this.form = this.blankForm();
-    this.formError.set('');
-    this.editingSku.set(null);
-    this.selected.set(null);
-    this.mode.set('create');
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { mode: 'create' },
+    });
   }
 
   openView(item: AdminInventoryItem): void {
-    this.selected.set(item);
-    this.mode.set('view');
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { id: item.sku },
+    });
   }
 
   openEdit(item: AdminInventoryItem): void {
-    this.selected.set(item);
-    this.editingSku.set(item.sku);
-    this.form = {
-      name: item.name,
-      sku: item.sku,
-      category: item.category,
-      slotCode: item.slotCode,
-      price: item.price,
-      stock: item.stock,
-      capacity: item.capacity,
-      parLevel: item.parLevel,
-    };
-    this.formError.set('');
-    this.mode.set('edit');
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { id: item.sku, mode: 'edit' },
+    });
   }
 
   backToIndex(): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {},
+    });
+  }
+
+  private applyRoute(
+    id: string | null,
+    modeParam: string | null,
+    items: AdminInventoryItem[],
+  ): void {
+    if (modeParam === 'create') {
+      if (this.mode() !== 'create') {
+        this.form = this.blankForm();
+        this.formError.set('');
+        this.imageError.set('');
+        this.editingSku.set(null);
+        this.selected.set(null);
+      }
+      this.mode.set('create');
+      return;
+    }
+
+    if (id) {
+      const item = items.find((i) => i.sku === id) ?? null;
+      if (!item) {
+        this.mode.set('index');
+        this.selected.set(null);
+        this.editingSku.set(null);
+        return;
+      }
+      this.selected.set(item);
+      if (modeParam === 'edit') {
+        this.editingSku.set(item.sku);
+        this.form = {
+          name: item.name,
+          sku: item.sku,
+          category: item.category,
+          slotCode: item.slotCode,
+          price: item.price,
+          stock: item.stock,
+          capacity: item.capacity,
+          parLevel: item.parLevel,
+          imageUrl: item.imageUrl,
+        };
+        this.formError.set('');
+        this.imageError.set('');
+        this.mode.set('edit');
+      } else {
+        this.mode.set('view');
+      }
+      return;
+    }
+
     this.mode.set('index');
     this.selected.set(null);
     this.editingSku.set(null);
@@ -1146,6 +1393,7 @@ export class AdminInventoryPanelComponent {
       stock: Number(this.form.stock),
       capacity: Number(this.form.capacity),
       parLevel: Number(this.form.parLevel),
+      imageUrl: this.form.imageUrl,
     };
 
     if (this.mode() === 'create') {
@@ -1155,7 +1403,10 @@ export class AdminInventoryPanelComponent {
             this.formError.set('SKU already exists.');
             return;
           }
-          this.backToIndex();
+          void this.router.navigate([], {
+            relativeTo: this.route,
+            queryParams: { id: item.sku },
+          });
         },
       });
       return;
@@ -1170,8 +1421,10 @@ export class AdminInventoryPanelComponent {
           this.formError.set('Could not update — SKU may already exist.');
           return;
         }
-        this.selected.set(item);
-        this.mode.set('view');
+        void this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { id: item.sku },
+        });
       },
     });
   }
@@ -1195,6 +1448,7 @@ export class AdminInventoryPanelComponent {
       stock: 0,
       capacity: 15,
       parLevel: 3,
+      imageUrl: null as string | null,
     };
   }
 }

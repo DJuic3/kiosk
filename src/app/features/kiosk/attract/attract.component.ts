@@ -33,6 +33,9 @@ import { CATEGORIES } from '../../../core/data/mock-catalog';
             <app-touch-button variant="primary" (pressed)="start()">
               Touch to Begin
             </app-touch-button>
+            <app-touch-button variant="secondary" (pressed)="goVoucher()">
+              Collect with voucher
+            </app-touch-button>
             <span class="hint">Or tap anywhere on this screen</span>
           </div>
           <ul class="trust">
@@ -45,8 +48,8 @@ import { CATEGORIES } from '../../../core/data/mock-catalog';
 
         <div class="attract__showcase" (click)="$event.stopPropagation()">
           <div class="showcase-head">
-            <h2>Popular right now</h2>
-            <span>In stock at this machine</span>
+            <h2>In stock right now</h2>
+            <span>Ads only show what this machine can sell</span>
           </div>
           <div class="showcase-grid">
             @for (product of featured$ | async; track product.id) {
@@ -400,5 +403,11 @@ export class AttractComponent {
   startWithProduct(id: string): void {
     this.session.startSession();
     void this.router.navigate(['/product', id]);
+  }
+
+  goVoucher(): void {
+    this.session.startSession();
+    this.session.setStep('voucher');
+    void this.router.navigate(['/voucher']);
   }
 }

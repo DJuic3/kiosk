@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { DatePipe, UpperCasePipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { CartService } from '../../../core/services/cart.service';
 import { MachineService } from '../../../core/services/machine.service';
 import { OrderService } from '../../../core/services/order.service';
@@ -13,7 +14,7 @@ import { CurrencyFormatPipe } from '../../../shared/pipes/currency-format.pipe';
 @Component({
   selector: 'app-collect',
   standalone: true,
-  imports: [DatePipe, UpperCasePipe, TouchButtonComponent, CurrencyFormatPipe],
+  imports: [DatePipe, UpperCasePipe, FormsModule, TouchButtonComponent, CurrencyFormatPipe],
   template: `
     <section class="collect page">
       <div class="collect__layout">
@@ -50,11 +51,50 @@ import { CurrencyFormatPipe } from '../../../shared/pipes/currency-format.pipe';
             <app-touch-button variant="secondary" [block]="true" (pressed)="downloadAgain()">
               Download receipt
             </app-touch-button>
-            <app-touch-button variant="primary" [block]="true" (pressed)="finish()">
+            <app-touch-button variant="primary" [block]="true" (pressed)="openSurvey()">
               Done
             </app-touch-button>
           </div>
         </div>
+
+        @if (showSurvey()) {
+          <div class="survey" role="dialog" aria-label="Post-sale survey">
+            <div class="survey__card">
+              <h2>How was your visit?</h2>
+              <p>Quick feedback helps us improve this Econet kiosk.</p>
+              <div class="survey__stars">
+                @for (n of [1, 2, 3, 4, 5]; track n) {
+                  <button
+                    type="button"
+                    class="star"
+                    [class.active]="rating() >= n"
+                    (click)="rating.set(n)"
+                  >
+                    ★
+                  </button>
+                }
+              </div>
+              <textarea
+                [(ngModel)]="surveyComment"
+                rows="3"
+                placeholder="Anything we should know? (optional)"
+              ></textarea>
+              <div class="survey__actions">
+                <app-touch-button variant="secondary" [block]="true" (pressed)="skipSurvey()">
+                  Skip
+                </app-touch-button>
+                <app-touch-button
+                  variant="primary"
+                  [block]="true"
+                  [disabled]="rating() === 0"
+                  (pressed)="submitSurvey()"
+                >
+                  Submit
+                </app-touch-button>
+              </div>
+            </div>
+          </div>
+        }
 
         @if (order(); as currentOrder) {
           <aside class="receipt" aria-label="Purchase receipt">
@@ -402,6 +442,71 @@ import { CurrencyFormatPipe } from '../../../shared/pipes/currency-format.pipe';
         order: -1;
       }
     }
+
+    .survey {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background: rgba(8, 18, 48, 0.55);
+    }
+
+    .survey__card {
+      width: min(440px, 100%);
+      display: grid;
+      gap: 14px;
+      padding: 28px;
+      border-radius: 20px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+      text-align: center;
+    }
+
+    .survey__card h2 {
+      margin: 0;
+      font-size: 1.45rem;
+    }
+
+    .survey__card p {
+      margin: 0;
+      color: var(--text-muted);
+    }
+
+    .survey__stars {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .star {
+      border: 0;
+      background: transparent;
+      font-size: 2rem;
+      color: #d0d5dd;
+      cursor: pointer;
+      line-height: 1;
+    }
+
+    .star.active {
+      color: #f5a623;
+    }
+
+    .survey__card textarea {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      font: inherit;
+      resize: vertical;
+    }
+
+    .survey__actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
   `,
 })
 export class CollectComponent implements OnInit, OnDestroy {
@@ -416,7 +521,10 @@ export class CollectComponent implements OnInit, OnDestroy {
   readonly payment = this.session.paymentIntent;
   readonly machine = signal<MachineInfo | null>(null);
   readonly downloadStatus = signal<'pending' | 'done' | 'error'>('pending');
+  readonly showSurvey = signal(false);
+  readonly rating = signal(0);
 
+  surveyComment = '';
   receiptNumber = `RCP-${Date.now()}`;
   private resetTimer: ReturnType<typeof setTimeout> | null = null;
   private downloaded = false;
@@ -447,7 +555,7 @@ export class CollectComponent implements OnInit, OnDestroy {
       },
     });
 
-    this.resetTimer = setTimeout(() => this.finish(), 20000);
+    this.resetTimer = setTimeout(() => this.openSurvey(), 20000);
   }
 
   ngOnDestroy(): void {
@@ -458,6 +566,26 @@ export class CollectComponent implements OnInit, OnDestroy {
 
   async downloadAgain(): Promise<void> {
     await this.autoDownload(true);
+  }
+
+  openSurvey(): void {
+    if (this.resetTimer) {
+      clearTimeout(this.resetTimer);
+      this.resetTimer = null;
+    }
+    this.session.setStep('survey');
+    this.showSurvey.set(true);
+  }
+
+  skipSurvey(): void {
+    this.finish();
+  }
+
+  submitSurvey(): void {
+    if (this.rating() === 0) {
+      return;
+    }
+    this.finish();
   }
 
   finish(): void {

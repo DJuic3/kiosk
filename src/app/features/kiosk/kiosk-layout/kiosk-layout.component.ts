@@ -2,13 +2,14 @@ import { Component, HostListener, OnDestroy, OnInit, inject } from '@angular/cor
 import { Router, RouterOutlet } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { StatusBarComponent } from '../../../shared/components/status-bar/status-bar.component';
+import { YamuraiAssistantComponent } from '../../../shared/components/yamurai-assistant/yamurai-assistant.component';
 import { SessionService } from '../../../core/services/session.service';
 import { CartService } from '../../../core/services/cart.service';
 
 @Component({
   selector: 'app-kiosk-layout',
   standalone: true,
-  imports: [RouterOutlet, StatusBarComponent],
+  imports: [RouterOutlet, StatusBarComponent, YamuraiAssistantComponent],
   template: `
     <div class="kiosk-layout">
       @if (session.step() !== 'idle') {
@@ -17,6 +18,7 @@ import { CartService } from '../../../core/services/cart.service';
       <main class="kiosk-layout__main">
         <router-outlet />
       </main>
+      <app-yamurai-assistant />
     </div>
   `,
   styles: `

@@ -10,11 +10,23 @@ export type KioskStep =
   | 'cart'
   | 'checkout'
   | 'payment'
+  | 'fiscal'
   | 'dispensing'
-  | 'collect';
+  | 'collect'
+  | 'refund'
+  | 'voucher'
+  | 'survey';
 
 /** Steps that should not idle-timeout mid-transaction */
-const PROTECTED_STEPS: KioskStep[] = ['payment', 'dispensing', 'collect'];
+const PROTECTED_STEPS: KioskStep[] = [
+  'payment',
+  'fiscal',
+  'dispensing',
+  'collect',
+  'refund',
+  'voucher',
+  'survey',
+];
 
 @Injectable({ providedIn: 'root' })
 export class SessionService {

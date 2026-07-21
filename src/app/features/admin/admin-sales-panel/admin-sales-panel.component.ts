@@ -1,18 +1,21 @@
-import { AsyncPipe, CurrencyPipe, DatePipe, UpperCasePipe } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { CurrencyPipe, DatePipe } from '@angular/common';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AdminSale } from '../../../core/models/admin.model';
 import { AdminDataService, AdminSaleInput } from '../../../core/services/admin-data.service';
 import { MOCK_PRODUCTS } from '../../../core/data/mock-catalog';
 import { TouchButtonComponent } from '../../../shared/components/touch-button/touch-button.component';
 
 type SalesMode = 'index' | 'view' | 'create';
+type StatusFilter = 'all' | AdminSale['status'];
+type PaymentFilter = 'all' | 'ecocash' | 'card' | 'qr' | 'cash';
 
 @Component({
   selector: 'app-admin-sales-panel',
   standalone: true,
-  imports: [AsyncPipe, CurrencyPipe, DatePipe, UpperCasePipe, FormsModule, TouchButtonComponent],
+  imports: [CurrencyPipe, DatePipe, FormsModule, TouchButtonComponent],
   template: `
     <section class="sales-panel">
       @if (mode() === 'index') {
@@ -22,6 +25,61 @@ type SalesMode = 'index' | 'view' | 'create';
             <p class="sub">Index of transactions — view or create records.</p>
           </div>
           <app-touch-button variant="primary" (pressed)="openCreate()">+ New sale</app-touch-button>
+        </div>
+
+        <div class="summary-row">
+          <article class="summary-card">
+            <span>Total sales</span>
+            <strong>{{ summary().total }}</strong>
+          </article>
+          <article class="summary-card ok">
+            <span>Revenue</span>
+            <strong>{{ summary().revenue | currency: 'USD' }}</strong>
+          </article>
+          <article class="summary-card ok">
+            <span>Completed</span>
+            <strong>{{ summary().completed }}</strong>
+          </article>
+          <article class="summary-card warn">
+            <span>Partial</span>
+            <strong>{{ summary().partial }}</strong>
+          </article>
+          <article class="summary-card danger">
+            <span>Voided</span>
+            <strong>{{ summary().voided }}</strong>
+          </article>
+          <article class="summary-card">
+            <span>Units sold</span>
+            <strong>{{ summary().units }}</strong>
+          </article>
+        </div>
+
+        <div class="filter-block">
+          <label class="filter-field search-field">
+            Search
+            <input
+              type="search"
+              [ngModel]="searchQuery()"
+              (ngModelChange)="searchQuery.set($event)"
+              placeholder="Receipt, product, SKU…"
+            />
+          </label>
+          <label class="filter-field">
+            Status
+            <select [ngModel]="statusFilter()" (ngModelChange)="onStatusFilter($event)">
+              @for (f of statusFilters; track f.id) {
+                <option [value]="f.id">{{ f.label }}</option>
+              }
+            </select>
+          </label>
+          <label class="filter-field">
+            Payment
+            <select [ngModel]="paymentFilter()" (ngModelChange)="onPaymentFilter($event)">
+              @for (f of paymentFilters; track f.id) {
+                <option [value]="f.id">{{ f.label }}</option>
+              }
+            </select>
+          </label>
         </div>
 
         <div class="table-wrap">
@@ -39,7 +97,7 @@ type SalesMode = 'index' | 'view' | 'create';
               </tr>
             </thead>
             <tbody>
-              @for (sale of sales$ | async; track sale.id) {
+              @for (sale of filteredSales(); track sale.id) {
                 <tr>
                   <td>{{ sale.soldAt | date: 'dd MMM HH:mm' }}</td>
                   <td>{{ sale.receiptNumber }}</td>
@@ -49,7 +107,7 @@ type SalesMode = 'index' | 'view' | 'create';
                   </td>
                   <td>{{ sale.quantity }}</td>
                   <td>{{ sale.total | currency: 'USD' }}</td>
-                  <td>{{ sale.paymentMethod | uppercase }}</td>
+                  <td>{{ paymentLabel(sale.paymentMethod) }}</td>
                   <td>
                     <span class="pill" [attr.data-status]="sale.status">{{ sale.status }}</span>
                   </td>
@@ -60,7 +118,7 @@ type SalesMode = 'index' | 'view' | 'create';
                 </tr>
               } @empty {
                 <tr>
-                  <td colspan="8" class="empty">No sales yet. Create the first record.</td>
+                  <td colspan="8" class="empty">No sales match these filters.</td>
                 </tr>
               }
             </tbody>
@@ -287,6 +345,90 @@ type SalesMode = 'index' | 'view' | 'create';
     .head-actions {
       display: flex;
       gap: 10px;
+    }
+
+    .summary-row {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .summary-card {
+      padding: 16px;
+      border-radius: 16px;
+      background: #fff;
+      border: 1px solid var(--border);
+    }
+
+    .summary-card span {
+      display: block;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .summary-card strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: var(--primary-dark);
+      letter-spacing: -0.02em;
+    }
+
+    .summary-card.ok strong { color: var(--success); }
+    .summary-card.warn strong { color: var(--warning); }
+    .summary-card.danger strong { color: #c62828; }
+
+    .filter-block {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .filter-field {
+      display: grid;
+      gap: 6px;
+      min-width: 180px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+
+    .filter-field select,
+    .filter-field input {
+      min-height: 44px;
+      padding: 0 14px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+      font: inherit;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text);
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
+    .filter-field select {
+      cursor: pointer;
+    }
+
+    .search-field {
+      flex: 1;
+      min-width: min(280px, 100%);
+    }
+
+    .filter-field select:focus,
+    .filter-field input:focus {
+      outline: none;
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-soft);
     }
 
     .table-wrap {
@@ -651,8 +793,15 @@ type SalesMode = 'index' | 'view' | 'create';
       font-weight: 700;
     }
 
+    @media (max-width: 1100px) {
+      .summary-row {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
     @media (max-width: 700px) {
-      .sale-form {
+      .sale-form,
+      .summary-row {
         grid-template-columns: 1fr;
       }
 
@@ -664,15 +813,93 @@ type SalesMode = 'index' | 'view' | 'create';
 })
 export class AdminSalesPanelComponent {
   private readonly data = inject(AdminDataService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
-  readonly sales$ = this.data.getSales();
+  private readonly sales = toSignal(this.data.getSales(), { initialValue: [] as AdminSale[] });
+  private readonly queryParams = toSignal(this.route.queryParamMap);
   readonly products = MOCK_PRODUCTS;
   readonly machineId = toSignal(this.data.getSelectedKioskId(), { initialValue: 'KIOSK-001' });
   readonly mode = signal<SalesMode>('index');
   readonly selected = signal<AdminSale | null>(null);
   readonly formError = signal('');
+  readonly statusFilter = signal<StatusFilter>('all');
+  readonly paymentFilter = signal<PaymentFilter>('all');
+  readonly searchQuery = signal('');
+
+  readonly statusFilters: { id: StatusFilter; label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'completed', label: 'Completed' },
+    { id: 'partial', label: 'Partial' },
+    { id: 'voided', label: 'Voided' },
+  ];
+
+  readonly paymentFilters: { id: PaymentFilter; label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'ecocash', label: 'EcoCash' },
+    { id: 'card', label: 'Card' },
+    { id: 'qr', label: 'QR' },
+    { id: 'cash', label: 'Cash' },
+  ];
+
+  constructor() {
+    effect(() => {
+      const params = this.queryParams();
+      const items = this.sales();
+      if (!params) {
+        return;
+      }
+      this.applyRoute(params.get('id'), params.get('mode'), items);
+    });
+  }
+
+  readonly filteredSales = computed(() => {
+    const status = this.statusFilter();
+    const payment = this.paymentFilter();
+    const query = this.searchQuery().trim().toLowerCase();
+    return this.sales().filter((sale) => {
+      const statusOk = status === 'all' || sale.status === status;
+      const paymentOk = payment === 'all' || sale.paymentMethod === payment;
+      if (!statusOk || !paymentOk) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+      return (
+        sale.receiptNumber.toLowerCase().includes(query) ||
+        sale.productName.toLowerCase().includes(query) ||
+        sale.sku.toLowerCase().includes(query) ||
+        sale.id.toLowerCase().includes(query) ||
+        this.paymentLabel(sale.paymentMethod).toLowerCase().includes(query)
+      );
+    });
+  });
+
+  readonly summary = computed(() => {
+    const items = this.sales();
+    const completed = items.filter((s) => s.status === 'completed');
+    return {
+      total: items.length,
+      revenue: Number(completed.reduce((sum, s) => sum + s.total, 0).toFixed(2)),
+      completed: completed.length,
+      partial: items.filter((s) => s.status === 'partial').length,
+      voided: items.filter((s) => s.status === 'voided').length,
+      units: items
+        .filter((s) => s.status !== 'voided')
+        .reduce((sum, s) => sum + s.quantity, 0),
+    };
+  });
 
   form = this.blankForm();
+
+  onStatusFilter(value: string): void {
+    this.statusFilter.set(value as StatusFilter);
+  }
+
+  onPaymentFilter(value: string): void {
+    this.paymentFilter.set(value as PaymentFilter);
+  }
 
   productImage(sku: string): string | null {
     return this.products.find((p) => p.sku === sku)?.imageUrl ?? null;
@@ -689,18 +916,49 @@ export class AdminSalesPanelComponent {
   }
 
   openCreate(): void {
-    this.form = this.blankForm();
-    this.formError.set('');
-    this.selected.set(null);
-    this.mode.set('create');
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { mode: 'create' },
+    });
   }
 
   openView(sale: AdminSale): void {
-    this.selected.set(sale);
-    this.mode.set('view');
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { id: sale.id },
+    });
   }
 
   backToIndex(): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {},
+    });
+  }
+
+  private applyRoute(id: string | null, modeParam: string | null, items: AdminSale[]): void {
+    if (modeParam === 'create') {
+      if (this.mode() !== 'create') {
+        this.form = this.blankForm();
+        this.formError.set('');
+        this.selected.set(null);
+      }
+      this.mode.set('create');
+      return;
+    }
+
+    if (id) {
+      const sale = items.find((s) => s.id === id) ?? null;
+      if (!sale) {
+        this.mode.set('index');
+        this.selected.set(null);
+        return;
+      }
+      this.selected.set(sale);
+      this.mode.set('view');
+      return;
+    }
+
     this.mode.set('index');
     this.selected.set(null);
     this.formError.set('');
@@ -737,7 +995,12 @@ export class AdminSalesPanelComponent {
     };
 
     this.data.createSale(payload).subscribe({
-      next: () => this.backToIndex(),
+      next: (sale) => {
+        void this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { id: sale.id },
+        });
+      },
     });
   }
 

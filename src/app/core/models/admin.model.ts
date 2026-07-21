@@ -27,6 +27,7 @@ export interface AdminInventoryItem {
   stock: number;
   capacity: number;
   parLevel: number;
+  imageUrl: string | null;
   status: 'ok' | 'low' | 'out';
 }
 

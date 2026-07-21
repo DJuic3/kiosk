@@ -47,6 +47,7 @@ function buildInventoryForKiosk(seed: number): AdminInventoryItem[] {
       stock,
       capacity,
       parLevel,
+      imageUrl: p.imageUrl,
       status: deriveInventoryStatus(stock, parLevel),
     };
   });

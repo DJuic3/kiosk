@@ -1,7 +1,8 @@
 import { DatePipe, UpperCasePipe } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute, Router } from '@angular/router';
 import {
   AdminSystemUser,
   AdminUserRole,
@@ -822,8 +823,11 @@ type RoleFilter = 'all' | AdminUserRole;
 })
 export class AdminUsersPanelComponent {
   private readonly data = inject(AdminDataService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   private readonly users = toSignal(this.data.getUsers(), { initialValue: [] as AdminSystemUser[] });
+  private readonly queryParams = toSignal(this.route.queryParamMap);
   readonly currentKioskId = toSignal(this.data.getSelectedKioskId(), { initialValue: 'KIOSK-001' });
 
   readonly kiosks = MOCK_KIOSKS;
@@ -847,6 +851,17 @@ export class AdminUsersPanelComponent {
   ];
 
   form = this.blankForm();
+
+  constructor() {
+    effect(() => {
+      const params = this.queryParams();
+      const items = this.users();
+      if (!params) {
+        return;
+      }
+      this.applyRoute(params.get('id'), params.get('mode'), items);
+    });
+  }
 
   readonly filteredUsers = computed(() => {
     const list = this.users();
@@ -889,51 +904,96 @@ export class AdminUsersPanelComponent {
   }
 
   openCreate(): void {
-    this.form = this.blankForm();
-    this.form.kioskAccess = [this.currentKioskId()];
-    this.formError.set('');
-    this.editingId.set(null);
-    this.selected.set(null);
-    this.mode.set('create');
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { mode: 'create' },
+    });
   }
 
   openView(user: AdminSystemUser): void {
-    this.selected.set(user);
-    this.mode.set('view');
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { id: user.id },
+    });
   }
 
   openEdit(user: AdminSystemUser): void {
-    this.selected.set(user);
-    this.editingId.set(user.id);
-    this.form = {
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      department: user.department,
-      status: user.status,
-      kioskAccess: [...user.kioskAccess],
-      lastLoginAt: user.lastLoginAt,
-      phone: user.phone ?? '',
-      notes: user.notes ?? '',
-    };
-    this.formError.set('');
-    this.mode.set('edit');
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { id: user.id, mode: 'edit' },
+    });
   }
 
   backToIndex(): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {},
+    });
+  }
+
+  cancelForm(): void {
+    const selected = this.selected();
+    if (this.mode() === 'edit' && selected) {
+      void this.router.navigate([], {
+        relativeTo: this.route,
+        queryParams: { id: selected.id },
+      });
+      return;
+    }
+    this.backToIndex();
+  }
+
+  private applyRoute(
+    id: string | null,
+    modeParam: string | null,
+    items: AdminSystemUser[],
+  ): void {
+    if (modeParam === 'create') {
+      if (this.mode() !== 'create') {
+        this.form = this.blankForm();
+        this.form.kioskAccess = [this.currentKioskId()];
+        this.formError.set('');
+        this.editingId.set(null);
+        this.selected.set(null);
+      }
+      this.mode.set('create');
+      return;
+    }
+
+    if (id) {
+      const user = items.find((u) => u.id === id) ?? null;
+      if (!user) {
+        this.mode.set('index');
+        this.selected.set(null);
+        this.editingId.set(null);
+        return;
+      }
+      this.selected.set(user);
+      if (modeParam === 'edit') {
+        this.editingId.set(user.id);
+        this.form = {
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          department: user.department,
+          status: user.status,
+          kioskAccess: [...user.kioskAccess],
+          lastLoginAt: user.lastLoginAt,
+          phone: user.phone ?? '',
+          notes: user.notes ?? '',
+        };
+        this.formError.set('');
+        this.mode.set('edit');
+      } else {
+        this.mode.set('view');
+      }
+      return;
+    }
+
     this.mode.set('index');
     this.selected.set(null);
     this.editingId.set(null);
     this.formError.set('');
-  }
-
-  cancelForm(): void {
-    if (this.mode() === 'edit' && this.selected()) {
-      this.mode.set('view');
-      this.formError.set('');
-      return;
-    }
-    this.backToIndex();
   }
 
   toggleKiosk(id: string, event: Event): void {
@@ -984,8 +1044,10 @@ export class AdminUsersPanelComponent {
             this.formError.set('A user with that email already exists.');
             return;
           }
-          this.selected.set(user);
-          this.mode.set('view');
+          void this.router.navigate([], {
+            relativeTo: this.route,
+            queryParams: { id: user.id },
+          });
         },
       });
       return;
@@ -1000,8 +1062,10 @@ export class AdminUsersPanelComponent {
           this.formError.set('Could not update — email may already be in use.');
           return;
         }
-        this.selected.set(user);
-        this.mode.set('view');
+        void this.router.navigate([], {
+          relativeTo: this.route,
+          queryParams: { id: user.id },
+        });
       },
     });
   }
