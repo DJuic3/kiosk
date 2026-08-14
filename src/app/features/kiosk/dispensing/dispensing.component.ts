@@ -181,7 +181,15 @@ export class DispensingComponent implements OnInit {
         }, 1200);
       },
       error: () => {
-        void this.router.navigate(['/refund']);
+        this.phase.set('done');
+        this.headline.set('Could not reach machine');
+        this.subtitle.set(
+          'MQTT dispense failed. Check broker settings on Machine control, then retry.',
+        );
+        setTimeout(() => {
+          this.session.setStep('refund');
+          void this.router.navigate(['/refund']);
+        }, 3000);
       },
     });
   }

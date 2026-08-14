@@ -5,6 +5,11 @@ export const environment = {
   edgeApiUrl: 'http://localhost:8090/api/v1',
   /** Frontend-only mode: all data comes from local mock catalogue */
   useMockData: true,
+  /** When true, kiosk dispense uses the same MQTT path as /dev/machine */
+  useMqttDispense: true,
   machineId: 'KIOSK-001',
   sessionTimeoutSeconds: 120,
+  /** Browser MQTT console (WebSocket) — requires Mosquitto port 9001 */
+  mqttWsUrl: 'ws://localhost:9001',
+  mqttMachineId: 'MACHINE001',
 };

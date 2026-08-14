@@ -17,6 +17,8 @@ export interface Product {
   imageUrl: string;
   badge?: string;
   slotCode: string;
+  /** Physical machine coil/selection number for MQTT dispense commands */
+  mqttSelection?: number;
   stockAvailable: number;
   featured?: boolean;
   features: string[];

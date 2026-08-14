@@ -44,6 +44,12 @@ import { TouchButtonComponent } from '../touch-button/touch-button.component';
       display: grid;
       justify-items: end;
       gap: 10px;
+      pointer-events: none;
+    }
+
+    .yamurai__fab,
+    .yamurai__panel {
+      pointer-events: auto;
     }
     .yamurai__fab {
       min-height: 48px;

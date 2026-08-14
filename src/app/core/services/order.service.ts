@@ -6,10 +6,12 @@ import { ApiResponse } from '../models/api-response.model';
 import { CartSummary } from '../models/cart.model';
 import { CreditNote, DispenseResult, FiscalReceipt, Order } from '../models/order.model';
 import { PaymentIntent, PaymentMethod } from '../models/payment.model';
+import { MachineControlService } from './machine-control.service';
 
 @Injectable({ providedIn: 'root' })
 export class OrderService {
   private readonly http = inject(HttpClient);
+  private readonly machineControl = inject(MachineControlService);
   private failOnceForDemo = true;
 
   createOrder(cart: CartSummary): Observable<Order> {
@@ -119,7 +121,23 @@ export class OrderService {
    * Demo: first attempt fails the last unit once, then retries succeed.
    */
   dispenseOrder(order: Order, attempt = 1): Observable<DispenseResult[]> {
+    if (environment.useMqttDispense) {
+      return this.machineControl.dispenseOrder(order, attempt);
+    }
+
     if (environment.useMockData) {
+      return this.mockDispenseOrder(order, attempt);
+    }
+
+    return this.http
+      .post<ApiResponse<DispenseResult[]>>(`${environment.edgeApiUrl}/dispense`, {
+        orderId: order.id,
+        attempt,
+      })
+      .pipe(map((res) => res.data));
+  }
+
+  private mockDispenseOrder(order: Order, attempt = 1): Observable<DispenseResult[]> {
       const units = order.lines.flatMap((line) =>
         Array.from({ length: line.quantity }, () => ({
           slotCode: line.product.slotCode,
@@ -145,14 +163,6 @@ export class OrderService {
       });
 
       return of(results).pipe(delay(attempt === 1 ? 2200 : 1800));
-    }
-
-    return this.http
-      .post<ApiResponse<DispenseResult[]>>(`${environment.edgeApiUrl}/dispense`, {
-        orderId: order.id,
-        attempt,
-      })
-      .pipe(map((res) => res.data));
   }
 
   createCreditNote(order: Order, reason: string, amount?: number): Observable<CreditNote> {

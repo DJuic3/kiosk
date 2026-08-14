@@ -78,11 +78,12 @@ import { CATEGORIES } from '../../../core/data/mock-catalog';
       </div>
 
       <footer class="attract__footer">
-        <span>Pay · Collect · Done — usually under a minute</span>
         <div class="attract__links" (click)="$event.stopPropagation()">
           <a routerLink="/attendant" class="staff">Staff</a>
+          <a routerLink="/dev/machine" class="staff">Machine control</a>
           <a routerLink="/admin/login" class="admin-btn">Admin login</a>
         </div>
+        <span class="attract__tagline">Pay · Collect · Done — usually under a minute</span>
       </footer>
     </section>
   `,
@@ -91,7 +92,7 @@ import { CATEGORIES } from '../../../core/data/mock-catalog';
       display: flex;
       flex-direction: column;
       min-height: 100vh;
-      padding: 28px 40px 24px;
+      padding: 28px 40px 88px;
       background:
         radial-gradient(ellipse 80% 50% at 100% 0%, rgba(227, 6, 19, 0.18), transparent 50%),
         radial-gradient(ellipse 60% 40% at 0% 20%, rgba(255, 255, 255, 0.12), transparent 45%),
@@ -323,14 +324,23 @@ import { CATEGORIES } from '../../../core/data/mock-catalog';
       justify-content: space-between;
       gap: 16px;
       padding-top: 8px;
+      padding-right: 8px;
       font-size: 0.9rem;
       opacity: 0.9;
+      flex-wrap: wrap;
+    }
+
+    .attract__tagline {
+      margin-left: auto;
+      text-align: right;
+      max-width: 28ch;
     }
 
     .attract__links {
       display: flex;
       align-items: center;
-      gap: 10px;
+      flex-wrap: wrap;
+      gap: 10px 14px;
     }
 
     .staff {
@@ -382,7 +392,17 @@ import { CATEGORIES } from '../../../core/data/mock-catalog';
 
     @media (max-width: 640px) {
       .attract {
-        padding: 20px;
+        padding: 20px 20px 96px;
+      }
+
+      .attract__footer {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .attract__tagline {
+        margin-left: 0;
+        text-align: left;
       }
     }
   `,

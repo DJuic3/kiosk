@@ -78,6 +78,13 @@ export const routes: Routes = [
       import('./features/attendant/attendant.component').then((m) => m.AttendantComponent),
   },
   {
+    path: 'dev/machine',
+    loadComponent: () =>
+      import('./features/dev/machine-control/machine-control.component').then(
+        (m) => m.MachineControlComponent,
+      ),
+  },
+  {
     path: 'admin/login',
     loadComponent: () =>
       import('./features/admin/admin-login/admin-login.component').then(
