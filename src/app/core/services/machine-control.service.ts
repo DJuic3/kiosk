@@ -14,6 +14,9 @@ export interface MachineControlSettings {
 }
 
 const STORAGE_KEY = 'vending_machine_control_settings';
+/** Native MQTT port — browsers must use WebSocket on 9001 instead. */
+const MQTT_TCP_PORT = 1883;
+const MQTT_WS_PORT = 9001;
 
 @Injectable({ providedIn: 'root' })
 export class MachineControlService {
@@ -23,7 +26,7 @@ export class MachineControlService {
     const defaults: MachineControlSettings = {
       brokerUrl: environment.mqttWsUrl,
       brokerHost: 'localhost',
-      brokerPort: 9001,
+      brokerPort: MQTT_WS_PORT,
       brokerProtocol: 'ws',
       machineId: environment.mqttMachineId,
     };
@@ -34,10 +37,53 @@ export class MachineControlService {
         return defaults;
       }
       const saved = JSON.parse(raw) as Partial<MachineControlSettings>;
-      return { ...defaults, ...saved };
+      return this.normalizeSettings({ ...defaults, ...saved });
     } catch {
       return defaults;
     }
+  }
+
+  /** Browsers speak MQTT over WebSocket (9001), not plain TCP MQTT (1883). */
+  normalizeSettings(settings: MachineControlSettings): MachineControlSettings {
+    let { brokerUrl, brokerHost, brokerPort, brokerProtocol, machineId } = settings;
+
+    try {
+      const parsed = new URL(brokerUrl.trim());
+      const isWs = parsed.protocol === 'ws:' || parsed.protocol === 'wss:';
+      if (isWs && Number(parsed.port || brokerPort) === MQTT_TCP_PORT) {
+        parsed.port = String(MQTT_WS_PORT);
+        brokerUrl = parsed.toString().replace(/\/$/, '');
+        brokerPort = MQTT_WS_PORT;
+      } else if (isWs) {
+        brokerHost = parsed.hostname;
+        brokerPort = parsed.port ? Number(parsed.port) : MQTT_WS_PORT;
+        brokerProtocol = parsed.protocol === 'wss:' ? 'wss' : 'ws';
+      }
+    } catch {
+      // keep field values below
+    }
+
+    if (brokerPort === MQTT_TCP_PORT) {
+      brokerPort = MQTT_WS_PORT;
+      brokerUrl = `${brokerProtocol}://${brokerHost.trim()}:${MQTT_WS_PORT}`;
+    }
+
+    const normalized: MachineControlSettings = {
+      brokerUrl,
+      brokerHost,
+      brokerPort,
+      brokerProtocol,
+      machineId,
+    };
+
+    if (
+      settings.brokerUrl !== normalized.brokerUrl ||
+      settings.brokerPort !== normalized.brokerPort
+    ) {
+      this.saveSettings(normalized);
+    }
+
+    return normalized;
   }
 
   saveSettings(settings: MachineControlSettings): void {
@@ -72,6 +118,8 @@ export class MachineControlService {
   }
 
   connect(settings = this.loadSettings()): Observable<void> {
+    settings = this.normalizeSettings(settings);
+
     if (this.mqtt.state() === 'connected') {
       return of(undefined);
     }

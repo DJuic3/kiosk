@@ -25,6 +25,14 @@ export class MqttWsService {
     this.state.set('connecting');
     this.error.set('');
 
+    if (/:1883(?:\/|$)/.test(brokerWsUrl)) {
+      this.state.set('error');
+      this.error.set(
+        'Port 1883 is plain MQTT (for vending PCs). Use WebSocket port 9001, e.g. ws://10.251.82.128:9001',
+      );
+      return;
+    }
+
     try {
       this.socket = new WebSocket(brokerWsUrl, 'mqtt');
     } catch (err) {
@@ -50,7 +58,12 @@ export class MqttWsService {
     };
 
     this.socket.onclose = () => {
-      if (this.state() !== 'error') {
+      if (this.state() === 'connecting') {
+        this.state.set('error');
+        if (!this.error()) {
+          this.error.set('WebSocket closed before MQTT handshake completed');
+        }
+      } else if (this.state() !== 'error') {
         this.state.set('closed');
       }
     };
@@ -116,18 +129,11 @@ export class MqttWsService {
     const protocol = 'MQTT';
     const protoBytes = new TextEncoder().encode(protocol);
     const idBytes = new TextEncoder().encode(clientId);
-    const variable =
-      2 +
-      protoBytes.length +
-      1 +
-      1 +
-      2 +
-      2 +
-      idBytes.length;
+    const variableHeaderLen = 2 + protoBytes.length + 1 + 1 + 2;
     const payloadLen = 2 + idBytes.length;
-    const remaining = variable + payloadLen;
+    const remaining = variableHeaderLen + payloadLen;
 
-    const buf = new Uint8Array(2 + remaining);
+    const buf = new Uint8Array(1 + this.remainingLengthSize(remaining) + remaining);
     let i = 0;
     buf[i++] = 0x10;
     i += this.writeRemainingLength(buf, i, remaining);
@@ -191,6 +197,13 @@ export class MqttWsService {
       buf[pos++] = encoded;
     } while (x > 0);
     return pos - offset;
+  }
+
+  private remainingLengthSize(length: number): number {
+    if (length <= 127) return 1;
+    if (length <= 16383) return 2;
+    if (length <= 2097151) return 3;
+    return 4;
   }
 
   private readRemainingLength(data: Uint8Array, offset: number): [number, number, number] {

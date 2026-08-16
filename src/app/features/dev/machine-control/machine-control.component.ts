@@ -25,6 +25,12 @@ import { TouchButtonComponent } from '../../../shared/components/touch-button/to
       @if (control.mqtt.error()) {
         <p class="banner error">{{ control.mqtt.error() }}</p>
       }
+      @if (brokerPort === 1883) {
+        <p class="banner warn">
+          Port <strong>1883</strong> is for physical machines (plain MQTT). This page needs WebSocket port
+          <strong>9001</strong> — change the port above, then click Connect.
+        </p>
+      }
 
       <div class="grid">
         <article class="panel">
@@ -69,9 +75,9 @@ import { TouchButtonComponent } from '../../../shared/components/touch-button/to
             }
           </div>
           <p class="hint">
-            Edit host/port above, then click <strong>Connect</strong> (or <strong>Reconnect</strong> if already connected).
-            Physical vending PCs use plain MQTT on port <strong>1883</strong> — this page uses WebSocket
-            (<strong>{{ brokerPort }}</strong>) to talk from the browser.
+            <strong>Connect</strong> joins the MQTT broker (Docker Mosquitto), not the vending machine.
+            The machine is a separate client on port <strong>1883</strong>. If it is off, this page still
+            connects — dispense commands will sit on the broker until the machine comes online.
           </p>
           <p class="hint mono">Machine MQTT reference: mqtt://{{ brokerHost }}:1883</p>
         </article>
@@ -188,6 +194,14 @@ import { TouchButtonComponent } from '../../../shared/components/touch-button/to
       border-radius: 12px;
       background: #ffebee;
       color: #c62828;
+      font-weight: 600;
+    }
+
+    .banner.warn {
+      padding: 12px 16px;
+      border-radius: 12px;
+      background: #fff4e0;
+      color: #8a6100;
       font-weight: 600;
     }
 
@@ -353,15 +367,15 @@ export class MachineControlComponent implements OnInit, OnDestroy {
   stateLabel(): string {
     switch (this.control.mqtt.state()) {
       case 'connected':
-        return 'Connected';
+        return 'Broker connected';
       case 'connecting':
-        return 'Connecting…';
+        return 'Connecting to broker…';
       case 'error':
-        return 'Error';
+        return 'Broker error';
       case 'closed':
-        return 'Disconnected';
+        return 'Broker disconnected';
       default:
-        return 'Not connected';
+        return 'Broker not connected';
     }
   }
 
@@ -388,6 +402,9 @@ export class MachineControlComponent implements OnInit, OnDestroy {
   }
 
   onBrokerChange(): void {
+    if (this.brokerPort === 1883) {
+      this.brokerPort = 9001;
+    }
     if (!this.urlEditedManually) {
       this.brokerUrl = `${this.brokerProtocol}://${this.brokerHost.trim()}:${this.brokerPort}`;
     }
@@ -467,7 +484,12 @@ export class MachineControlComponent implements OnInit, OnDestroy {
       const parsed = new URL(url.trim());
       this.brokerProtocol = parsed.protocol === 'wss:' ? 'wss' : 'ws';
       this.brokerHost = parsed.hostname;
-      this.brokerPort = parsed.port ? Number(parsed.port) : this.brokerProtocol === 'wss' ? 443 : 9001;
+      let port = parsed.port ? Number(parsed.port) : this.brokerProtocol === 'wss' ? 443 : 9001;
+      if (port === 1883) {
+        port = 9001;
+        this.brokerUrl = `${this.brokerProtocol}://${this.brokerHost}:${port}`;
+      }
+      this.brokerPort = port;
       this.urlEditedManually = false;
     } catch {
       // keep current field values
