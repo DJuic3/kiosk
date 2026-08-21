@@ -25,7 +25,7 @@ export class MachineControlService {
   loadSettings(): MachineControlSettings {
     const defaults: MachineControlSettings = {
       brokerUrl: environment.mqttWsUrl,
-      brokerHost: 'localhost',
+      brokerHost: environment.mqttHost,
       brokerPort: MQTT_WS_PORT,
       brokerProtocol: 'ws',
       machineId: environment.mqttMachineId,
