@@ -6,6 +6,8 @@ export const environment = {
   useMqttDispense: true,
   machineId: 'KIOSK-001',
   sessionTimeoutSeconds: 120,
-  mqttWsUrl: 'ws://localhost:9001',
+  mqttWsUrl: 'ws://192.168.55.248:9001',
   mqttMachineId: 'MACHINE001',
+  mqttHost: '192.168.55.248',
+  mqttPort: 1883,
 };

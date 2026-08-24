@@ -1,34 +1,37 @@
 # Vending Kiosk — Setup Guide
 
-This guide walks a new developer through running the **vending-kiosk** frontend locally and optionally starting the **MQTT broker** used to talk to physical vending machines.
+Guide for running the **Angular kiosk UI**, the local **MQTT broker**, and connecting a physical machine that runs the **ARAK vending-sdk**.
 
-The Angular app runs in **mock-data mode** by default. No Java backend is required for local development.
+No Java backend is required for local development (`useMockData: true`).
 
 ---
 
-## What you get
+## Quick links (after `npm start`)
 
-| Component | Purpose |
-|-----------|---------|
-| **Customer kiosk UI** | Touchscreen purchase flow (browse → pay → dispense → collect) |
-| **Attendant console** | Staff PIN login, GRV restock, maintenance actions |
-| **Admin console** | Sales, inventory, finance, operations, users |
-| **Docker / Mosquitto** | Local MQTT broker simulating the company server |
+| Screen | URL |
+|--------|-----|
+| **Customer kiosk (home)** | http://localhost:4200/ |
+| **Browse products** | http://localhost:4200/browse |
+| **Voucher collect** | http://localhost:4200/voucher |
+| **Machine control (dev / MQTT)** | http://localhost:4200/dev/machine |
+| **Attendant (staff)** | http://localhost:4200/attendant |
+| **Admin login** | http://localhost:4200/admin/login |
+| **Admin overview** | http://localhost:4200/admin/overview |
+| **Admin operations** | http://localhost:4200/admin/operations |
+
+Also available from the attract screen footer: **Staff**, **Machine control**, **Admin login**.
 
 ---
 
 ## Prerequisites
 
-Install these before you begin:
-
 | Tool | Version | Notes |
 |------|---------|-------|
-| **Node.js** | 20 LTS or 22 LTS | Avoid odd-numbered Node versions for production builds |
-| **npm** | Comes with Node | Used for dependencies and scripts |
-| **Docker Desktop** | Latest | Required only if you need MQTT / machine integration |
-| **Git** | Any recent | To clone the repository |
-
-Verify installations:
+| **Node.js** | 20 LTS or 22 LTS | Prefer even LTS releases |
+| **npm** | Bundled with Node | |
+| **Docker Desktop** | Latest | Required for MQTT / physical machines |
+| **mosquitto-clients** (optional) | Homebrew: `brew install mosquitto` | For `mosquitto_pub` / `mosquitto_sub` in Terminal |
+| **Git** | Any recent | |
 
 ```bash
 node -v
@@ -44,314 +47,258 @@ docker compose version
 ```bash
 git clone <repository-url>
 cd vending_machine
-```
-
-If you already have the repo, pull the latest changes and install dependencies:
-
-```bash
 npm install
 ```
 
 ---
 
-## 2. Start the frontend (required)
+## 2. Start everything
+
+### Terminal A — MQTT broker
 
 ```bash
-npm start
-```
-
-This runs `ng serve` and opens the app at:
-
-**http://localhost:4200**
-
-The dev server reloads automatically when you change source files.
-
-### Production build (optional)
-
-```bash
-npm run build
-```
-
-Output is written to `dist/vending-kiosk/browser`. Serve that folder in a fullscreen browser or WebView on a kiosk tablet.
-
----
-
-## 3. Start Docker / MQTT (optional)
-
-Docker runs a **Mosquitto** broker so a real vending PC can connect over the LAN. The Angular UI does **not** use MQTT directly — only the machine SDK does.
-
-From the project root:
-
-```bash
+cd vending_machine
 docker compose up -d
-```
-
-Check status:
-
-```bash
 docker compose ps
 ```
 
-Stop when finished:
+Broker ports:
+
+| Port | Use |
+|------|-----|
+| **1883** | Plain MQTT (vending-sdk / `mosquitto_pub`) |
+| **9001** | WebSocket MQTT (browser Machine control + kiosk dispense) |
+
+Stop broker:
 
 ```bash
 docker compose down
 ```
 
-### Broker details
-
-| Setting | Value |
-|---------|-------|
-| Container name | `vending-mqtt` |
-| Port | `1883` (plain MQTT) |
-| Config | `docker/mosquitto/config/mosquitto.conf` |
-| Auth | Anonymous (dev only) |
-
-### Find your Mac’s LAN IP
-
-Machines on the network must connect to your host IP, not `localhost`:
+### Terminal B — Angular app
 
 ```bash
-ipconfig getifaddr en0
+cd vending_machine
+npm start
 ```
 
-Example: `10.251.82.27` → machines use **`10.251.82.27:1883`**.
+Open **http://localhost:4200/**
 
-### Test MQTT locally
+---
 
-**Option A — Browser UI (recommended)**
+## 3. App URLs and demo credentials
 
-Open **http://localhost:4200/dev/machine**, click **Connect**, then **Send dispense**. No terminal commands needed for publish/subscribe.
+### Customer kiosk
 
-**Option B — Terminal**
+- Home: http://localhost:4200/
+- Flow: Attract → Browse → Product → Cart → Checkout → Payment → Fiscal → Dispensing → Collect
+- With `useMqttDispense: true`, dispensing publishes MQTT to the same broker as Machine control
 
-Subscribe (leave running in one terminal):
+**Demo vouchers:** `VCH-48291`, `VCH-77310`, `VCH-11902` (expired)
 
-```bash
-docker exec -it vending-mqtt mosquitto_sub -t 'vmc/MACHINE001/#' -v
-```
+### Machine control (dev)
 
-Publish a test dispense command (another terminal):
+- http://localhost:4200/dev/machine  
+- Connect to broker, set **Machine ID**, send dispense commands without Terminal  
+- Settings are saved in the browser (`localStorage`)
 
-```bash
-docker exec -it vending-mqtt mosquitto_pub \
-  -t 'vmc/MACHINE001/commands/dispense' \
-  -m '{"selections":[12]}'
-```
+### Attendant
 
-You should see the message on the subscriber. If the physical machine does nothing, the machine is not connected to your broker yet — see [MQTT troubleshooting](#mqtt-troubleshooting) below.
+- http://localhost:4200/attendant  
+- PIN: **`1234`**
 
-### Watch for machine connections
+### Admin
 
-```bash
-docker logs -f vending-mqtt
-```
+- Login: http://localhost:4200/admin/login  
+- Username: **`admin`**  
+- Password: **`Admin@123`**
 
-A successful machine connection looks like:
+Admin sections (after login):
 
-```text
-New connection from 10.251.82.XX on port 1883.
-New client connected from 10.251.82.XX as ...
-```
-
-Until you see a LAN IP (not only `127.0.0.1` or `192.168.65.1`), publishes from your Mac will not reach the machine.
+| Page | URL |
+|------|-----|
+| Overview | http://localhost:4200/admin/overview |
+| Sales | http://localhost:4200/admin/sales |
+| Inventory | http://localhost:4200/admin/inventory |
+| Finance | http://localhost:4200/admin/finance |
+| Operations | http://localhost:4200/admin/operations |
+| Users | http://localhost:4200/admin/users |
+| Malfunctions | http://localhost:4200/admin/malfunctions |
+| Security | http://localhost:4200/admin/security |
+| History | http://localhost:4200/admin/history |
 
 ---
 
 ## 4. Configuration
 
-Environment settings live in `src/environments/environment.ts`:
+Edit `src/environments/environment.ts` (dev) and `environment.prod.ts` (production):
 
-```typescript
-export const environment = {
-  production: false,
-  apiBaseUrl: 'http://localhost:8080/api/v1',   // future Java API
-  edgeApiUrl: 'http://localhost:8090/api/v1',   // future edge service
-  useMockData: true,                             // all data from mocks
-  machineId: 'KIOSK-001',
-  sessionTimeoutSeconds: 120,
-};
+| Key | Meaning |
+|-----|---------|
+| `useMockData` | Catalogue / admin data from mocks |
+| `useMqttDispense` | Kiosk dispense uses MQTT (Machine control path) |
+| `mqttHost` | LAN IP of the Mac running Docker Mosquitto |
+| `mqttPort` | `1883` for machines |
+| `mqttWsUrl` | e.g. `ws://10.251.82.155:9001` for the browser |
+| `mqttMachineId` | e.g. `MACHINE002` — must match SDK `MACHINE_ID` |
+
+Find your Mac LAN IP:
+
+```bash
+ipconfig getifaddr en0
 ```
 
-| Flag | Default | Meaning |
-|------|---------|---------|
-| `useMockData` | `true` | Catalogue, orders, admin data come from in-app mocks |
-| `machineId` | `KIOSK-001` | Shown on receipts and ops records |
-| `sessionTimeoutSeconds` | `120` | Idle timeout before returning to attract screen |
-
-When a real backend is available, set `useMockData: false` and point `apiBaseUrl` / `edgeApiUrl` at your services.
+Update `mqttHost` / `mqttWsUrl` when your IP changes (office Wi‑Fi DHCP).
 
 ---
 
-## 5. Access URLs and demo credentials
+## 5. Connect a physical machine (ARAK vending-sdk)
 
-### Customer kiosk
+The Angular app does **not** include the SDK. On the vending PC:
 
-| URL | Description |
-|-----|-------------|
-| http://localhost:4200 | Attract / home screen |
-| http://localhost:4200/browse | Product catalogue |
-| http://localhost:4200/voucher | Collect with voucher code |
+1. Install `vending-sdk_*.deb` (ARAK package).
+2. Confirm service:
 
-**Customer flow:** Attract → Browse → Product → Cart → Checkout → Payment → Fiscal receipt → Dispensing → Collect (or Refund on failure).
+```bash
+systemctl status vending-sdk
+```
 
-**Demo voucher codes:** `VCH-48291`, `VCH-77310`, `VCH-11902` (expired).
+3. Point the SDK at **your Mac’s broker** in `/opt/vending-sdk/config.json`:
 
-### Attendant (staff)
+```json
+{
+  "MACHINE_ID": "MACHINE002",
+  "SERIAL": {
+    "PORT": "/dev/ttyVending",
+    "BAUDRATE": 57600
+  },
+  "MQTT": {
+    "HOST": "10.251.82.155",
+    "PORT": 1883
+  }
+}
+```
 
-| URL | http://localhost:4200/attendant |
-| PIN | `1234` |
+Replace `10.251.82.155` with your current Mac IP and `MACHINE002` with that unit’s ID.
 
-Features: machine health, stock overview, self-test, clear jam, GRV restock, maintenance mode.
+4. Restart:
 
-Also reachable from **Staff** on the attract screen footer.
+```bash
+sudo systemctl restart vending-sdk
+```
 
-### Admin
+5. On the Mac, confirm a **LAN** client appears (not only Docker/`172.19.0.1`):
 
-| URL | http://localhost:4200/admin/login |
-| Username | `admin` |
-| Password | `Admin@123` |
+```bash
+docker logs -f vending-mqtt
+```
 
-After login, sidebar sections include Overview, Sales, Inventory, Finance, **Operations** (credit notes, reservations, GRV history), Users, Malfunctions, Security, History.
+6. Smoke test:
+
+```bash
+mosquitto_sub -h 10.251.82.155 -p 1883 -t 'vmc/MACHINE002/#' -v
+
+mosquitto_pub -h 10.251.82.155 -p 1883 \
+  -t 'vmc/MACHINE002/commands/ping' \
+  -m '{}'
+```
+
+Expect `responses/ping` with `"message": "pong"`.
+
+### Useful MQTT commands
+
+**Dispense (one or more selections):**
+
+```bash
+mosquitto_pub -h 10.251.82.155 -p 1883 \
+  -t 'vmc/MACHINE002/commands/dispense' \
+  -m '{"selections":[4,5]}'
+```
+
+**Set price:**
+
+```bash
+mosquitto_pub -h 10.251.82.155 -p 1883 \
+  -t 'vmc/MACHINE002/commands/set_price' \
+  -m '{"selections":[4,5],"price":150}'
+```
+
+**Clear dispense queue / cancel:**
+
+```bash
+mosquitto_pub -h 10.251.82.155 -p 1883 \
+  -t 'vmc/MACHINE002/commands/cancel' \
+  -m '{}'
+```
+
+**Status:**
+
+```bash
+mosquitto_pub -h 10.251.82.155 -p 1883 \
+  -t 'vmc/MACHINE002/commands/status' \
+  -m '{}'
+```
+
+Topic pattern: `vmc/{MACHINE_ID}/commands/...`  
+Responses: `vmc/{MACHINE_ID}/responses/#`  
+Events: `vmc/{MACHINE_ID}/events/#`
+
+Official integration details: ARAK **VENDING SDK Integration Guide** (PDF) and the `vending-sdk_*.deb` installer.
 
 ---
 
-## 6. Project structure
+## 6. Project layout
 
 ```
 vending_machine/
-├── docker/
-│   └── mosquitto/config/mosquitto.conf   # MQTT broker config
-├── docker-compose.yml                    # Mosquitto service
-├── public/images/                        # Logos and product images
-├── src/
-│   ├── app/
-│   │   ├── core/                         # Models, services, mock data
-│   │   ├── features/
-│   │   │   ├── kiosk/                    # Customer UI
-│   │   │   ├── attendant/                # Staff console
-│   │   │   └── admin/                    # Admin console
-│   │   ├── shared/                       # Buttons, pipes, Yamurai assistant
-│   │   └── app.routes.ts
-│   └── environments/                     # environment.ts / environment.prod.ts
-├── package.json
-└── SETUP.md                              # This file
+├── docker-compose.yml              # Mosquitto broker
+├── docker/mosquitto/config/        # mosquitto.conf
+├── SETUP.md                        # This guide
+├── README.md                       # Short overview
+├── src/app/
+│   ├── features/kiosk/             # Customer UI
+│   ├── features/attendant/         # Staff console
+│   ├── features/admin/             # Admin console
+│   ├── features/dev/machine-control/  # MQTT UI
+│   └── core/services/              # Order, MQTT, mocks
+└── src/environments/               # mqttHost, mqttMachineId, flags
 ```
 
 ---
 
-## 7. Common npm scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm start` | Dev server on port 4200 |
-| `npm run build` | Production build to `dist/` |
-| `npm run watch` | Dev build with file watching |
-| `npm test` | Unit tests (Karma) |
-
----
-
-## 8. Troubleshooting
-
-### `npm install` or `npm start` fails
-
-- Use Node 20 or 22 LTS.
-- Delete `node_modules` and reinstall:
-
-  ```bash
-  rm -rf node_modules package-lock.json
-  npm install
-  ```
-
-### Port 4200 already in use
-
-```bash
-npx ng serve --port 4201
-```
-
-### Docker container won’t start
-
-- Ensure Docker Desktop is running.
-- Check if port 1883 is taken:
-
-  ```bash
-  lsof -nP -iTCP:1883 -sTCP:LISTEN
-  ```
-
-- Restart the stack:
-
-  ```bash
-  docker compose down
-  docker compose up -d
-  ```
-
-### MQTT troubleshooting
+## 7. Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `mosquitto_pub` succeeds but machine idle | No machine subscribed | Configure machine broker host to your LAN IP + port 1883 |
-| No LAN IP in `docker logs vending-mqtt` | Machine not reaching broker | Same Wi‑Fi/VLAN; test `nc -zv <mac-ip> 1883` from machine |
-| Connection refused from machine | Firewall or wrong IP | Mac firewall off or allow 1883; use `ipconfig getifaddr en0` |
-| Wrong machine id in topic | Topic mismatch | Use `vmc/<MACHINE_ID>/commands/dispense` matching machine config |
+| Dispense publish OK but machine does nothing | SDK still on `localhost` broker | Set `MQTT.HOST` to Mac LAN IP; restart `vending-sdk` |
+| No `responses/ping` | Machine not connected to Mac broker | `docker logs -f vending-mqtt` — need a real LAN IP client |
+| `machine_busy` | Previous vend still running | Publish `commands/cancel` |
+| `selection_jammed` | Hardware / empty coil | Check spiral & sensors; motor may retry once |
+| Machine control won’t connect | Wrong WS URL/port | Use `ws://<mac-ip>:9001` (not `1883`) |
+| Port 4200 in use | Another `ng serve` | `npx ng serve --port 4201` |
+| Old machine ID in UI | Cached settings | Update fields on `/dev/machine` and Connect, or clear site data |
 
-**Important:** Publishing from inside the Docker container only proves Mosquitto works on your Mac. The vending PC must maintain its own MQTT client connection.
-
-### App redirects to home unexpectedly
-
-Customer sessions idle out after **2 minutes** (configurable via `sessionTimeoutSeconds`). Active payment, dispense, and collect steps are protected from timeout.
-
-### Admin login fails
-
-Credentials are hard-coded for demo: `admin` / `Admin@123`. Clear session storage in the browser if a stale session causes issues.
+**Important:** Browsers use **WebSocket port 9001**. Physical SDK uses **plain MQTT port 1883**. Same broker, different ports.
 
 ---
 
-## 9. Full local stack (quick reference)
+## 8. Onboarding checklist
 
-Run these in **two terminals**:
-
-**Terminal 1 — MQTT (optional):**
-
-```bash
-cd vending_machine
-docker compose up -d
-```
-
-**Terminal 2 — Frontend:**
-
-```bash
-cd vending_machine
-npm install   # first time only
-npm start
-```
-
-Open http://localhost:4200 and verify the attract screen loads.
+- [ ] `npm install` completed  
+- [ ] `docker compose up -d` — ports 1883 and 9001 open  
+- [ ] `npm start` — http://localhost:4200/ loads  
+- [ ] Open http://localhost:4200/dev/machine and Connect  
+- [ ] Attendant PIN `1234` works  
+- [ ] Admin `admin` / `Admin@123` works  
+- [ ] (Optional) Physical SDK `MACHINE_ID` + `MQTT.HOST` pointed at this Mac  
+- [ ] (Optional) `ping` → `pong` on `vmc/<MACHINE_ID>/responses/ping`  
+- [ ] (Optional) Test dispense + cancel  
 
 ---
 
-## 10. What is not included yet
+## 9. Related docs
 
-This repository is **frontend-only** with mock data. These require separate backend / hardware integration:
-
-- Java API (`localhost:8080`) and edge service (`localhost:8090`)
-- ZIMRA fiscal device / live fiscalisation
-- ERP / IMS stock sync
-- Super App voucher API
-- Physical dispense camera and UPS monitoring
-
-The UI includes demo flows for fiscal receipts, dispense retry, refunds, vouchers, GRV, and Yamurai assistant so product and ops journeys can be tested without live integrations.
-
----
-
-## Support checklist for new team members
-
-- [ ] Node.js and npm installed
-- [ ] `npm install` completed without errors
-- [ ] `npm start` → http://localhost:4200 loads
-- [ ] Completed a test purchase through to Collect
-- [ ] Logged into Attendant with PIN `1234`
-- [ ] Logged into Admin with `admin` / `Admin@123`
-- [ ] (Optional) `docker compose up -d` and broker shows on port 1883
-- [ ] (Optional) Machine connects and appears in `docker logs vending-mqtt`
-
-For day-to-day usage after setup, see [README.md](./README.md).
+- [README.md](./README.md) — project overview and customer journey  
+- ARAK VENDING SDK Integration Guide (PDF provided with the SDK)  
+- Config on device: `/opt/vending-sdk/config.json`  
+- Device logs: `journalctl -u vending-sdk -n 50` and `/var/log/vending-sdk/`

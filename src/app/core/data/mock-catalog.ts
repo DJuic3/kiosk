@@ -42,7 +42,7 @@ export const MOCK_PRODUCTS: Product[] = [
     imageUrl: 'images/products/sim-starter.svg',
     badge: 'Popular',
     slotCode: 'A1',
-    mqttSelection: 12,
+    mqttSelection: 4,
     stockAvailable: 12,
     featured: true,
     features: ['New phone number', 'Multi-size SIM (3-in-1)', 'Ready for EcoCash & data'],

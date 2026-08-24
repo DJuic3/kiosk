@@ -13,6 +13,8 @@ npm start
 
 Open [http://localhost:4200](http://localhost:4200)
 
+For Docker/MQTT, Machine control, admin links, and physical SDK setup, see **[SETUP.md](./SETUP.md)**.
+
 ## Customer journey
 
 1. **Attract** — idle screen with featured products  

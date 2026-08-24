@@ -408,7 +408,7 @@ export class MachineControlComponent implements OnInit, OnDestroy {
   brokerProtocol: 'ws' | 'wss' = 'ws';
   brokerUrl = environment.mqttWsUrl;
   machineId = environment.mqttMachineId;
-  selection = 12;
+  selection = 4;
   payloadJson = '';
   readonly quickSlots = [1, 6, 12, 18, 24];
 
