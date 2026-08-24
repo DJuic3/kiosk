@@ -1,113 +1,103 @@
-import { AsyncPipe, CurrencyPipe, DatePipe, UpperCasePipe } from '@angular/common';
-import { Component, inject, signal } from '@angular/core';
+import { CurrencyPipe, DatePipe, UpperCasePipe } from '@angular/common';
+import { Component, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { FormsModule } from '@angular/forms';
 import { AdminDataService } from '../../../core/services/admin-data.service';
 import {
   FinanceAccount,
   FinanceLedgerEntry,
   FinanceSettlement,
+  NamedShare,
 } from '../../../core/models/admin.model';
 
 type FinanceSection = 'overview' | 'accounts' | 'ledger' | 'settlements' | 'reconciliation';
+type LedgerTypeFilter = 'all' | FinanceLedgerEntry['type'];
+type SettlementStatusFilter = 'all' | FinanceSettlement['status'];
 
 @Component({
   selector: 'app-admin-finance-panel',
   standalone: true,
-  imports: [AsyncPipe, CurrencyPipe, DatePipe, UpperCasePipe],
+  imports: [CurrencyPipe, DatePipe, UpperCasePipe, FormsModule],
   template: `
-    @if (finance$ | async; as fin) {
+    @if (fin(); as fin) {
       <section class="fin">
-        <div class="fin__head">
+        <header class="page-head">
           <div>
+            <p class="eyebrow">Treasury</p>
             <h1>Accounting &amp; finance</h1>
-            <p class="sub">
-              {{ fin.machineId }} · {{ fin.location }} · {{ fin.periodLabel }} · Updated
-              {{ fin.generatedAt | date: 'dd MMM yyyy HH:mm' }}
-            </p>
+            <p class="sub">{{ fin.machineId }} · {{ fin.location }} · {{ fin.periodLabel }}</p>
           </div>
-          <div class="section-tabs">
-            @for (tab of sections; track tab.id) {
-              <button
-                type="button"
-                [class.active]="section() === tab.id"
-                (click)="section.set(tab.id)"
-              >
-                {{ tab.label }}
+          <time>{{ fin.generatedAt | date: 'dd MMM yyyy · HH:mm' }}</time>
+        </header>
+
+        <div class="hero">
+          <div class="hero__main">
+            <div class="hero__kicker">
+              <span>Net operating revenue</span>
+              <span>{{ fin.periodLabel }}</span>
+            </div>
+            <p class="hero__value">{{ fin.summary.netRevenue | currency: fin.currency }}</p>
+            <p class="hero__delta">
+              Gross {{ fin.summary.grossRevenue | currency: fin.currency }}
+              <span>− refunds {{ fin.summary.refundsVoids | currency: fin.currency }}</span>
+              <span>− fees {{ fin.summary.paymentFees | currency: fin.currency }}</span>
+            </p>
+            <div class="hero__stats">
+              <button type="button" (click)="go('settlements')">
+                <span>Settled to date</span>
+                <strong>{{ fin.summary.settledToDate | currency: fin.currency }}</strong>
               </button>
+              <button type="button" (click)="go('settlements')">
+                <span>In transit</span>
+                <strong>{{ fin.summary.pendingSettlements | currency: fin.currency }}</strong>
+              </button>
+              <button type="button" (click)="go('accounts')">
+                <span>Cash on hand</span>
+                <strong>{{ fin.summary.cashOnHand | currency: fin.currency }}</strong>
+              </button>
+              <button type="button" (click)="go('overview')">
+                <span>VAT collected</span>
+                <strong>{{ fin.summary.taxCollected | currency: fin.currency }}</strong>
+              </button>
+            </div>
+          </div>
+          <div class="hero__alerts">
+            <div class="hero__kicker"><span>Attention</span><span>{{ fin.alerts.length }} items</span></div>
+            @for (alert of fin.alerts; track alert.text) {
+              <div class="alert" [attr.data-level]="alert.level">
+                <span>{{ alert.level }}</span>
+                <p>{{ alert.text }}</p>
+              </div>
             }
           </div>
         </div>
 
-        <div class="alert-strip">
-          @for (alert of fin.alerts; track alert.text) {
-            <div class="alert" [attr.data-level]="alert.level">{{ alert.text }}</div>
+        <nav class="tabs">
+          @for (tab of sections; track tab.id) {
+            <button type="button" [class.active]="section() === tab.id" (click)="go(tab.id)">
+              {{ tab.label }}
+              <em>{{ tabCount(tab.id) }}</em>
+            </button>
           }
-        </div>
+        </nav>
 
         @if (section() === 'overview') {
-          <div class="kpi-grid">
-            <article class="kpi">
-              <span>Gross revenue</span>
-              <strong>{{ fin.summary.grossRevenue | currency: fin.currency }}</strong>
-              <em>Before fees &amp; refunds</em>
-            </article>
-            <article class="kpi warn">
-              <span>Refunds / voids</span>
-              <strong>{{ fin.summary.refundsVoids | currency: fin.currency }}</strong>
-              <em>Reversed turnover</em>
-            </article>
-            <article class="kpi warn">
-              <span>Payment fees</span>
-              <strong>{{ fin.summary.paymentFees | currency: fin.currency }}</strong>
-              <em>Acquiring &amp; scheme</em>
-            </article>
-            <article class="kpi">
-              <span>Tax collected</span>
-              <strong>{{ fin.summary.taxCollected | currency: fin.currency }}</strong>
-              <em>VAT recognised</em>
-            </article>
-            <article class="kpi success">
-              <span>Net revenue</span>
-              <strong>{{ fin.summary.netRevenue | currency: fin.currency }}</strong>
-              <em>After fees &amp; refunds</em>
-            </article>
-            <article class="kpi">
-              <span>Settled to date</span>
-              <strong>{{ fin.summary.settledToDate | currency: fin.currency }}</strong>
-              <em>Cleared to treasury</em>
-            </article>
-            <article class="kpi warn">
-              <span>Pending settlements</span>
-              <strong>{{ fin.summary.pendingSettlements | currency: fin.currency }}</strong>
-              <em>In transit</em>
-            </article>
-            <article class="kpi">
-              <span>Cash on hand</span>
-              <strong>{{ fin.summary.cashOnHand | currency: fin.currency }}</strong>
-              <em>Machine float</em>
-            </article>
-          </div>
-
-          <div class="two-col">
+          <div class="mid">
             <article class="panel">
               <div class="panel__head">
-                <h2>Payment channel mix</h2>
-                <span>Gross recognised</span>
+                <div>
+                  <h2>P&amp;L waterfall</h2>
+                  <p>How gross becomes net this period</p>
+                </div>
               </div>
-              <div class="mix-list">
-                @for (ch of fin.channelMix; track ch.label) {
-                  <div class="mix-row">
-                    <div class="mix-row__top">
-                      <strong>{{ ch.label }}</strong>
-                      <b>{{ ch.value | currency: fin.currency }}</b>
+              <div class="waterfall">
+                @for (row of pnlRows(); track row.label) {
+                  <div class="wf" [attr.data-tone]="row.tone">
+                    <span>{{ row.label }}</span>
+                    <div class="wf__track">
+                      <i [style.width.%]="row.width"></i>
                     </div>
-                    <div class="track">
-                      <div
-                        class="track__fill"
-                        [style.width.%]="ch.percent"
-                        [style.background]="ch.color"
-                      ></div>
-                    </div>
-                    <small>{{ ch.percent }}% of gross</small>
+                    <b>{{ row.signed | currency: fin.currency }}</b>
                   </div>
                 }
               </div>
@@ -115,66 +105,127 @@ type FinanceSection = 'overview' | 'accounts' | 'ledger' | 'settlements' | 'reco
 
             <article class="panel">
               <div class="panel__head">
-                <h2>P&amp;L snapshot</h2>
-                <span>{{ fin.periodLabel }}</span>
+                <div>
+                  <h2>Payment rails</h2>
+                  <p>Share of gross recognised</p>
+                </div>
               </div>
-              <div class="pl">
-                <div><span>Gross sales</span><strong>{{ fin.summary.grossRevenue | currency: fin.currency }}</strong></div>
-                <div class="neg"><span>Less refunds / voids</span><strong>−{{ fin.summary.refundsVoids | currency: fin.currency }}</strong></div>
-                <div class="neg"><span>Less payment fees</span><strong>−{{ fin.summary.paymentFees | currency: fin.currency }}</strong></div>
-                <div class="total"><span>Net operating revenue</span><strong>{{ fin.summary.netRevenue | currency: fin.currency }}</strong></div>
-                <div><span>Tax / VAT collected</span><strong>{{ fin.summary.taxCollected | currency: fin.currency }}</strong></div>
-                <div><span>Cash float</span><strong>{{ fin.summary.cashOnHand | currency: fin.currency }}</strong></div>
+              <div class="mix">
+                @let payTop = topShare(fin.channelMix);
+                <div class="donut" [style.background]="conic(fin.channelMix)">
+                  <div class="donut__hole">
+                    <b>{{ payTop.percent }}%</b>
+                    <span>{{ payTop.label }}</span>
+                  </div>
+                </div>
+                <div class="legend">
+                  @for (ch of fin.channelMix; track ch.label) {
+                    <div class="legend__row">
+                      <i [style.background]="ch.color"></i>
+                      <span>{{ ch.label }}</span>
+                      <b>{{ ch.value | currency: fin.currency }}</b>
+                      <small>{{ ch.percent }}% of gross</small>
+                    </div>
+                  }
+                </div>
               </div>
             </article>
           </div>
 
           <article class="panel">
             <div class="panel__head">
-              <h2>Account balances</h2>
-              <button type="button" class="text-btn" (click)="section.set('accounts')">View all</button>
+              <div>
+                <h2>Account balances</h2>
+                <p>{{ fin.accounts.length }} books on this kiosk</p>
+              </div>
+              <button type="button" class="text-btn" (click)="go('accounts')">Open accounts</button>
             </div>
-            <div class="account-grid">
-              @for (acc of fin.accounts.slice(0, 4); track acc.id) {
-                <button type="button" class="account-card" (click)="openAccount(acc)">
-                  <small>{{ acc.provider }}</small>
-                  <strong>{{ acc.name }}</strong>
-                  <em>{{ acc.balance | currency: acc.currency }}</em>
-                  <span class="pill" [attr.data-status]="acc.status">{{ acc.status }}</span>
-                </button>
-              }
+            <div class="table-wrap compact">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Account</th>
+                    <th>Type</th>
+                    <th>Balance</th>
+                    <th>Pending</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (acc of fin.accounts; track acc.id) {
+                    <tr class="clickable" (click)="openAccount(acc)">
+                      <td>
+                        <strong>{{ acc.name }}</strong>
+                        <small>{{ acc.provider }}</small>
+                      </td>
+                      <td>{{ accountTypeLabel(acc.type) }}</td>
+                      <td [class.neg-text]="acc.balance < 0">{{ acc.balance | currency: acc.currency }}</td>
+                      <td>{{ acc.pending | currency: acc.currency }}</td>
+                      <td><span class="pill" [attr.data-status]="acc.status">{{ acc.status }}</span></td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
             </div>
           </article>
         }
 
         @if (section() === 'accounts') {
-          <div class="account-grid full">
-            @for (acc of fin.accounts; track acc.id) {
-              <article class="account-card static" [attr.data-status]="acc.status">
-                <div class="account-card__top">
-                  <small>{{ accountTypeLabel(acc.type) }} · {{ acc.provider }}</small>
-                  <span class="pill" [attr.data-status]="acc.status">{{ acc.status }}</span>
-                </div>
-                <h3>{{ acc.name }}</h3>
-                <p class="balance" [class.neg]="acc.balance < 0">
-                  {{ acc.balance | currency: acc.currency }}
-                </p>
-                <div class="meta-row">
-                  <div>
-                    <span>Pending</span>
-                    <strong>{{ acc.pending | currency: acc.currency }}</strong>
-                  </div>
-                  <div>
-                    <span>Last movement</span>
-                    <strong>{{ acc.lastMovementAt | date: 'dd MMM HH:mm' }}</strong>
-                  </div>
-                </div>
-              </article>
-            }
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Account</th>
+                  <th>Type</th>
+                  <th>Provider</th>
+                  <th>Balance</th>
+                  <th>Pending</th>
+                  <th>Last movement</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (acc of fin.accounts; track acc.id) {
+                  <tr class="clickable" [attr.data-status]="acc.status" (click)="openAccount(acc)">
+                    <td>
+                      <strong>{{ acc.name }}</strong>
+                      <small>{{ acc.id }}</small>
+                    </td>
+                    <td>{{ accountTypeLabel(acc.type) }}</td>
+                    <td>{{ acc.provider }}</td>
+                    <td [class.neg-text]="acc.balance < 0">{{ acc.balance | currency: acc.currency }}</td>
+                    <td>{{ acc.pending | currency: acc.currency }}</td>
+                    <td>{{ acc.lastMovementAt | date: 'dd MMM HH:mm' }}</td>
+                    <td><span class="pill" [attr.data-status]="acc.status">{{ acc.status }}</span></td>
+                  </tr>
+                }
+              </tbody>
+            </table>
           </div>
         }
 
         @if (section() === 'ledger') {
+          <div class="toolbar">
+            <label class="filter-field search-field">
+              Search
+              <input
+                type="search"
+                [ngModel]="ledgerQuery()"
+                (ngModelChange)="ledgerQuery.set($event)"
+                placeholder="Reference, description, account…"
+              />
+            </label>
+            <label class="filter-field">
+              Type
+              <select [ngModel]="ledgerType()" (ngModelChange)="ledgerType.set($event)">
+                <option value="all">All types</option>
+                @for (type of ledgerTypes; track type) {
+                  <option [value]="type">{{ type }}</option>
+                }
+              </select>
+            </label>
+            <p class="result-count">{{ filteredLedger().length }} entries</p>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -190,16 +241,20 @@ type FinanceSection = 'overview' | 'accounts' | 'ledger' | 'settlements' | 'reco
                 </tr>
               </thead>
               <tbody>
-                @for (row of fin.ledger; track row.id) {
-                  <tr (click)="openLedger(row)" class="clickable">
+                @for (row of filteredLedger(); track row.id) {
+                  <tr class="clickable" (click)="openLedger(row)">
                     <td>{{ row.at | date: 'dd MMM HH:mm' }}</td>
                     <td><span class="type-pill" [attr.data-type]="row.type">{{ row.type }}</span></td>
                     <td>{{ row.reference }}</td>
                     <td>{{ row.description }}</td>
                     <td>{{ row.account }}</td>
-                    <td>{{ row.debit ? (row.debit | currency: fin.currency) : '—' }}</td>
-                    <td>{{ row.credit ? (row.credit | currency: fin.currency) : '—' }}</td>
+                    <td class="num">{{ row.debit ? (row.debit | currency: fin.currency) : '—' }}</td>
+                    <td class="num">{{ row.credit ? (row.credit | currency: fin.currency) : '—' }}</td>
                     <td><span class="pill" [attr.data-status]="row.status">{{ row.status }}</span></td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="8" class="empty">No ledger entries match these filters.</td>
                   </tr>
                 }
               </tbody>
@@ -208,34 +263,71 @@ type FinanceSection = 'overview' | 'accounts' | 'ledger' | 'settlements' | 'reco
         }
 
         @if (section() === 'settlements') {
-          <div class="settle-grid">
-            @for (set of fin.settlements; track set.id) {
-              <article class="settle-card" [attr.data-status]="set.status" (click)="openSettlement(set)">
-                <div class="settle-card__top">
-                  <strong>{{ set.channel }}</strong>
-                  <span class="pill" [attr.data-status]="set.status">{{ settlementLabel(set.status) }}</span>
-                </div>
-                <p>{{ set.periodLabel }}</p>
-                <div class="settle-figures">
-                  <div><span>Gross</span><strong>{{ set.gross | currency: fin.currency }}</strong></div>
-                  <div><span>Fees</span><strong>{{ set.fees | currency: fin.currency }}</strong></div>
-                  <div><span>Net</span><strong>{{ set.net | currency: fin.currency }}</strong></div>
-                </div>
-                <small>
-                  @if (set.settledAt) {
-                    Settled {{ set.settledAt | date: 'dd MMM yyyy HH:mm' }}
-                  } @else if (set.expectedAt) {
-                    Expected {{ set.expectedAt | date: 'dd MMM yyyy HH:mm' }}
-                  } @else {
-                    Awaiting status
-                  }
-                </small>
-              </article>
-            }
+          <div class="toolbar">
+            <label class="filter-field">
+              Status
+              <select [ngModel]="settlementStatus()" (ngModelChange)="settlementStatus.set($event)">
+                <option value="all">All statuses</option>
+                <option value="settled">Settled</option>
+                <option value="in_transit">In transit</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="failed">Failed</option>
+              </select>
+            </label>
+            <p class="result-count">{{ filteredSettlements().length }} batches</p>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Batch</th>
+                  <th>Channel</th>
+                  <th>Gross</th>
+                  <th>Fees</th>
+                  <th>Net</th>
+                  <th>When</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (set of filteredSettlements(); track set.id) {
+                  <tr class="clickable" [attr.data-status]="set.status" (click)="openSettlement(set)">
+                    <td>
+                      <strong>{{ set.periodLabel }}</strong>
+                      <small>{{ set.id }}</small>
+                    </td>
+                    <td>{{ set.channel }}</td>
+                    <td class="num">{{ set.gross | currency: fin.currency }}</td>
+                    <td class="num">{{ set.fees | currency: fin.currency }}</td>
+                    <td class="num"><strong>{{ set.net | currency: fin.currency }}</strong></td>
+                    <td>
+                      @if (set.settledAt) {
+                        Settled {{ set.settledAt | date: 'dd MMM HH:mm' }}
+                      } @else if (set.expectedAt) {
+                        Expected {{ set.expectedAt | date: 'dd MMM HH:mm' }}
+                      } @else {
+                        —
+                      }
+                    </td>
+                    <td>
+                      <span class="pill" [attr.data-status]="set.status">{{ settlementLabel(set.status) }}</span>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="7" class="empty">No settlement batches match this status.</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
           </div>
         }
 
         @if (section() === 'reconciliation') {
+          <div class="recon-note">
+            <span>{{ unmatchedCount() }} day(s) still open</span>
+            <span>Variance total {{ reconVariance() | currency: fin.currency }}</span>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -255,16 +347,16 @@ type FinanceSection = 'overview' | 'accounts' | 'ledger' | 'settlements' | 'reco
                   <tr [class.unmatched]="!day.matched">
                     <td>{{ day.date | date: 'EEE dd MMM' }}</td>
                     <td>{{ day.salesCount }}</td>
-                    <td>{{ day.grossSales | currency: fin.currency }}</td>
-                    <td>{{ day.voidsRefunds | currency: fin.currency }}</td>
-                    <td>{{ day.fees | currency: fin.currency }}</td>
-                    <td><strong>{{ day.netRecognised | currency: fin.currency }}</strong></td>
+                    <td class="num">{{ day.grossSales | currency: fin.currency }}</td>
+                    <td class="num">{{ day.voidsRefunds | currency: fin.currency }}</td>
+                    <td class="num">{{ day.fees | currency: fin.currency }}</td>
+                    <td class="num"><strong>{{ day.netRecognised | currency: fin.currency }}</strong></td>
                     <td>
                       <span class="pill" [attr.data-status]="day.matched ? 'healthy' : 'blocked'">
                         {{ day.matched ? 'Matched' : 'Open' }}
                       </span>
                     </td>
-                    <td [class.neg-text]="day.variance !== 0">
+                    <td class="num" [class.neg-text]="day.variance !== 0">
                       {{ day.variance | currency: fin.currency }}
                     </td>
                   </tr>
@@ -334,143 +426,211 @@ type FinanceSection = 'overview' | 'accounts' | 'ledger' | 'settlements' | 'reco
     }
   `,
   styles: `
-    .fin__head {
+    :host { display: block; user-select: text; }
+
+    .fin { display: grid; gap: 16px; }
+
+    .page-head {
       display: flex;
-      flex-wrap: wrap;
-      align-items: flex-start;
+      align-items: flex-end;
       justify-content: space-between;
       gap: 16px;
-      margin-bottom: 16px;
+    }
+
+    .eyebrow {
+      margin: 0 0 4px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--primary);
     }
 
     h1 {
       margin: 0 0 6px;
-      font-size: 1.7rem;
+      font-size: 1.85rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+
+    .sub, time {
+      margin: 0;
+      color: var(--text-muted);
+      font-weight: 700;
+      font-size: 0.88rem;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 16px;
+      padding: 22px;
+      border-radius: 22px;
+      background:
+        radial-gradient(ellipse at 100% 0%, rgba(227, 6, 19, 0.18), transparent 42%),
+        linear-gradient(160deg, #162a86 0%, #0f1f66 58%, #0c184f 100%);
+      color: #fff;
+    }
+
+    .hero__kicker {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.62);
+    }
+
+    .hero__value {
+      margin: 0;
+      font-size: clamp(2.2rem, 4vw, 3.2rem);
+      font-weight: 800;
+      letter-spacing: -0.04em;
+      line-height: 1;
+    }
+
+    .hero__delta {
+      margin: 10px 0 18px;
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.78);
+    }
+
+    .hero__delta span { color: #ffb4b4; }
+
+    .hero__stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .hero__stats button {
+      padding: 10px 12px;
+      border: none;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .hero__stats span {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.5);
+    }
+
+    .hero__stats strong {
+      font-size: 0.98rem;
       font-weight: 800;
     }
 
-    .sub {
-      margin: 0;
-      color: var(--text-muted);
+    .hero__alerts { display: grid; gap: 8px; align-content: start; }
+
+    .alert {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border-left: 4px solid #9db4ff;
     }
 
-    .section-tabs {
+    .alert span {
+      font-size: 0.65rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #9db4ff;
+    }
+
+    .alert p {
+      margin: 4px 0 0;
+      font-size: 0.85rem;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+
+    .alert[data-level='warn'] { border-left-color: #ffd089; }
+    .alert[data-level='warn'] span { color: #ffd089; }
+    .alert[data-level='critical'] { border-left-color: #ffb4b4; background: rgba(227, 6, 19, 0.18); }
+    .alert[data-level='critical'] span { color: #ffb4b4; }
+
+    .tabs {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
     }
 
-    .section-tabs button {
-      min-height: 38px;
+    .tabs button {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 40px;
       padding: 0 14px;
       border: 1px solid var(--border);
       border-radius: 999px;
       background: #fff;
+      font: inherit;
       font-weight: 700;
       cursor: pointer;
     }
 
-    .section-tabs button.active {
+    .tabs button em {
+      font-style: normal;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--bg);
+      font-size: 0.72rem;
+      font-weight: 800;
+      color: var(--text-muted);
+    }
+
+    .tabs button.active {
       background: var(--primary);
       border-color: var(--primary);
       color: #fff;
     }
 
-    .alert-strip {
+    .tabs button.active em {
+      background: rgba(255, 255, 255, 0.18);
+      color: #fff;
+    }
+
+    .mid {
       display: grid;
-      gap: 8px;
-      margin-bottom: 18px;
-    }
-
-    .alert {
-      padding: 12px 14px;
-      border-radius: 12px;
-      background: #eef1f8;
-      border-left: 4px solid var(--primary);
-      font-size: 0.9rem;
-      font-weight: 600;
-    }
-
-    .alert[data-level='warn'] {
-      background: #fff4e0;
-      border-left-color: var(--warning);
-    }
-
-    .alert[data-level='critical'] {
-      background: #ffebee;
-      border-left-color: #c62828;
-    }
-
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-
-    .kpi {
-      padding: 16px;
-      border-radius: 16px;
-      background: #fff;
-      border: 1px solid var(--border);
-    }
-
-    .kpi span {
-      display: block;
-      color: var(--text-muted);
-      font-size: 0.78rem;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-
-    .kpi strong {
-      display: block;
-      margin: 8px 0 4px;
-      font-size: 1.45rem;
-      font-weight: 800;
-      color: var(--primary-dark);
-    }
-
-    .kpi em {
-      font-style: normal;
-      font-size: 0.78rem;
-      font-weight: 600;
-      color: var(--text-muted);
-    }
-
-    .kpi.warn strong { color: var(--warning); }
-    .kpi.success strong { color: var(--success); }
-
-    .two-col {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 14px;
-      margin-bottom: 14px;
+      grid-template-columns: 1.15fr 1fr;
+      gap: 16px;
     }
 
     .panel {
       padding: 18px;
-      border-radius: 16px;
+      border-radius: 18px;
       background: #fff;
       border: 1px solid var(--border);
-      margin-bottom: 14px;
     }
 
     .panel__head {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: space-between;
       gap: 12px;
-      margin-bottom: 14px;
+      margin-bottom: 16px;
     }
 
     .panel__head h2 {
       margin: 0;
-      font-size: 1rem;
+      font-size: 1.05rem;
       font-weight: 800;
     }
 
-    .panel__head span {
+    .panel__head p {
+      margin: 4px 0 0;
       color: var(--text-muted);
       font-size: 0.8rem;
       font-weight: 600;
@@ -480,204 +640,164 @@ type FinanceSection = 'overview' | 'accounts' | 'ledger' | 'settlements' | 'reco
       border: none;
       background: none;
       color: var(--primary);
+      font: inherit;
       font-weight: 800;
       cursor: pointer;
     }
 
-    .mix-list,
-    .pl {
+    .waterfall { display: grid; gap: 10px; }
+
+    .wf {
       display: grid;
+      grid-template-columns: 150px 1fr 110px;
       gap: 12px;
+      align-items: center;
     }
 
-    .mix-row__top {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      margin-bottom: 6px;
+    .wf span {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text-muted);
     }
 
-    .track {
-      height: 8px;
+    .wf b {
+      text-align: right;
+      font-size: 0.92rem;
+      font-weight: 800;
+      color: var(--primary-dark);
+    }
+
+    .wf__track {
+      height: 10px;
       border-radius: 999px;
       background: #eef1f8;
       overflow: hidden;
     }
 
-    .track__fill {
+    .wf__track i {
+      display: block;
       height: 100%;
       border-radius: 999px;
       background: var(--primary);
     }
 
-    .mix-row small {
+    .wf[data-tone='neg'] b { color: #c62828; }
+    .wf[data-tone='neg'] .wf__track i { background: var(--accent); }
+    .wf[data-tone='net'] b { color: var(--success); }
+    .wf[data-tone='net'] .wf__track i { background: var(--success); }
+
+    .mix {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .donut {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+    }
+
+    .donut__hole {
+      width: 78px;
+      height: 78px;
+      border-radius: 50%;
+      background: #fff;
+      display: grid;
+      place-content: center;
+      text-align: center;
+    }
+
+    .donut__hole b { font-size: 1.05rem; font-weight: 800; line-height: 1; }
+    .donut__hole span {
+      margin-top: 4px;
+      font-size: 0.62rem;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
       color: var(--text-muted);
+    }
+
+    .legend { display: grid; gap: 10px; }
+
+    .legend__row {
+      display: grid;
+      grid-template-columns: 10px 1fr auto;
+      grid-template-rows: auto auto;
+      column-gap: 8px;
+      align-items: center;
+      font-size: 0.88rem;
+      font-weight: 700;
+    }
+
+    .legend__row i {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      grid-row: 1 / span 2;
+    }
+
+    .legend__row b { color: var(--primary-dark); }
+    .legend__row small {
+      grid-column: 2;
+      color: var(--text-muted);
+      font-size: 0.75rem;
       font-weight: 600;
     }
 
-    .pl > div {
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      gap: 12px;
+    }
+
+    .filter-field {
+      display: grid;
+      gap: 6px;
+      font-size: 0.75rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-muted);
+    }
+
+    .search-field { flex: 1; min-width: min(280px, 100%); }
+
+    .filter-field input,
+    .filter-field select {
+      min-height: 44px;
+      padding: 0 14px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+      font: inherit;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text);
+      text-transform: none;
+      letter-spacing: normal;
+    }
+
+    .filter-field select { min-width: 160px; cursor: pointer; }
+
+    .result-count {
+      margin: 0 0 8px auto;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+
+    .recon-note {
       display: flex;
       justify-content: space-between;
       gap: 12px;
-      padding: 10px 12px;
-      border-radius: 10px;
-      background: var(--bg);
-    }
-
-    .pl span {
-      color: var(--text-muted);
-      font-weight: 600;
-    }
-
-    .pl .neg strong { color: #c62828; }
-    .pl .total {
-      background: var(--primary-soft);
-    }
-    .pl .total strong {
-      color: var(--primary-dark);
-      font-size: 1.1rem;
-    }
-
-    .account-grid {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 12px;
-    }
-
-    .account-grid.full {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    .account-card {
-      position: relative;
-      text-align: left;
-      padding: 16px;
-      border-radius: 16px;
-      background: #fff;
-      border: 1px solid var(--border);
-      cursor: pointer;
-    }
-
-    .account-card.static {
-      cursor: default;
-    }
-
-    .account-card small {
-      color: var(--text-muted);
+      font-size: 0.85rem;
       font-weight: 700;
-      font-size: 0.72rem;
-      text-transform: uppercase;
-    }
-
-    .account-card strong,
-    .account-card h3 {
-      display: block;
-      margin: 6px 0;
-      font-size: 1rem;
-      font-weight: 800;
-    }
-
-    .account-card em,
-    .balance {
-      display: block;
-      font-style: normal;
-      font-size: 1.35rem;
-      font-weight: 800;
-      color: var(--primary-dark);
-    }
-
-    .balance.neg,
-    .neg-text {
-      color: #c62828;
-    }
-
-    .account-card .pill {
-      position: absolute;
-      top: 14px;
-      right: 14px;
-    }
-
-    .account-card__top {
-      display: flex;
-      justify-content: space-between;
-      gap: 8px;
-      margin-bottom: 4px;
-    }
-
-    .meta-row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin-top: 14px;
-    }
-
-    .meta-row span {
-      display: block;
       color: var(--text-muted);
-      font-size: 0.72rem;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-
-    .meta-row strong {
-      font-size: 0.9rem;
-    }
-
-    .settle-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-    }
-
-    .settle-card {
-      padding: 18px;
-      border-radius: 16px;
-      background: #fff;
-      border: 1px solid var(--border);
-      border-left: 5px solid var(--success);
-      cursor: pointer;
-    }
-
-    .settle-card[data-status='in_transit'],
-    .settle-card[data-status='scheduled'] {
-      border-left-color: var(--warning);
-    }
-
-    .settle-card[data-status='failed'] {
-      border-left-color: #c62828;
-    }
-
-    .settle-card__top {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      margin-bottom: 6px;
-    }
-
-    .settle-card p {
-      margin: 0 0 14px;
-      color: var(--text-muted);
-      font-weight: 600;
-    }
-
-    .settle-figures {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-
-    .settle-figures span {
-      display: block;
-      color: var(--text-muted);
-      font-size: 0.72rem;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-
-    .settle-card small {
-      color: var(--text-muted);
-      font-weight: 600;
     }
 
     .table-wrap {
@@ -687,43 +807,59 @@ type FinanceSection = 'overview' | 'accounts' | 'ledger' | 'settlements' | 'reco
       border: 1px solid var(--border);
     }
 
+    .table-wrap.compact { border: none; border-radius: 0; }
+
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 760px;
+      min-width: 720px;
     }
 
-    th,
-    td {
-      padding: 12px 14px;
+    th, td {
+      padding: 11px 12px;
       text-align: left;
       border-bottom: 1px solid var(--border);
       font-size: 0.9rem;
+      vertical-align: middle;
     }
 
     th {
+      position: sticky;
+      top: 0;
+      background: #f7f8fc;
       font-size: 0.75rem;
       font-weight: 800;
       text-transform: uppercase;
+      letter-spacing: 0.04em;
       color: var(--text-muted);
-      background: var(--bg);
     }
 
-    tr.clickable {
-      cursor: pointer;
+    td strong { display: block; }
+    td small { display: block; color: var(--text-muted); font-size: 0.75rem; }
+    td.num { text-align: right; font-variant-numeric: tabular-nums; }
+    th:has(+ th.num), td.num { font-variant-numeric: tabular-nums; }
+
+    tr.clickable { cursor: pointer; }
+    tr.clickable:hover { background: #f7f8fc; }
+    tr.unmatched, tr[data-status='failed'], tr[data-status='blocked'] { background: #fff8f0; }
+    tr[data-status='attention'], tr[data-status='in_transit'], tr[data-status='scheduled'] { background: #fffaf0; }
+
+    .empty {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 36px 12px;
     }
 
-    tr.clickable:hover,
-    tr.unmatched {
-      background: #f8f9fd;
+    .neg-text, .balance.neg { color: #c62828; }
+
+    .balance {
+      margin: 0;
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: var(--primary-dark);
     }
 
-    tr.unmatched {
-      background: #fff8f0;
-    }
-
-    .pill,
-    .type-pill {
+    .pill, .type-pill {
       display: inline-block;
       padding: 4px 10px;
       border-radius: 999px;
@@ -735,8 +871,7 @@ type FinanceSection = 'overview' | 'accounts' | 'ledger' | 'settlements' | 'reco
 
     .pill[data-status='healthy'],
     .pill[data-status='settled'],
-    .pill[data-status='posted'],
-    .pill[data-status='matched'] {
+    .pill[data-status='posted'] {
       background: #e8f5ee;
       color: var(--success);
     }
@@ -762,7 +897,8 @@ type FinanceSection = 'overview' | 'accounts' | 'ledger' | 'settlements' | 'reco
     }
 
     .type-pill[data-type='fee'],
-    .type-pill[data-type='tax'] {
+    .type-pill[data-type='tax'],
+    .type-pill[data-type='payout'] {
       background: #eef1f8;
       color: var(--text-muted);
     }
@@ -825,11 +961,7 @@ type FinanceSection = 'overview' | 'accounts' | 'ledger' | 'settlements' | 'reco
       font-weight: 600;
     }
 
-    .drawer-meta {
-      display: grid;
-      gap: 10px;
-      margin-top: 20px;
-    }
+    .drawer-meta { display: grid; gap: 10px; margin-top: 20px; }
 
     .drawer-meta > div {
       display: flex;
@@ -847,32 +979,36 @@ type FinanceSection = 'overview' | 'accounts' | 'ledger' | 'settlements' | 'reco
     }
 
     @media (max-width: 1100px) {
-      .kpi-grid,
-      .account-grid,
-      .account-grid.full {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
+      .hero, .mid, .hero__stats { grid-template-columns: 1fr 1fr; }
     }
 
     @media (max-width: 800px) {
-      .two-col,
-      .settle-grid,
-      .kpi-grid,
-      .account-grid,
-      .account-grid.full {
-        grid-template-columns: 1fr;
-      }
+      .hero, .mid, .hero__stats, .mix, .wf { grid-template-columns: 1fr; }
+      .wf b { text-align: left; }
     }
   `,
 })
 export class AdminFinancePanelComponent {
   private readonly data = inject(AdminDataService);
 
-  readonly finance$ = this.data.getFinance();
+  readonly fin = toSignal(this.data.getFinance());
   readonly section = signal<FinanceSection>('overview');
   readonly selectedAccount = signal<FinanceAccount | null>(null);
   readonly selectedLedger = signal<FinanceLedgerEntry | null>(null);
   readonly selectedSettlement = signal<FinanceSettlement | null>(null);
+  readonly ledgerQuery = signal('');
+  readonly ledgerType = signal<LedgerTypeFilter>('all');
+  readonly settlementStatus = signal<SettlementStatusFilter>('all');
+
+  readonly ledgerTypes: FinanceLedgerEntry['type'][] = [
+    'sale',
+    'settlement',
+    'refund',
+    'void',
+    'fee',
+    'payout',
+    'tax',
+  ];
 
   readonly sections: { id: FinanceSection; label: string }[] = [
     { id: 'overview', label: 'Overview' },
@@ -881,6 +1017,106 @@ export class AdminFinancePanelComponent {
     { id: 'settlements', label: 'Settlements' },
     { id: 'reconciliation', label: 'Reconciliation' },
   ];
+
+  readonly filteredLedger = computed(() => {
+    const fin = this.fin();
+    if (!fin) {
+      return [];
+    }
+    const query = this.ledgerQuery().trim().toLowerCase();
+    const type = this.ledgerType();
+    return fin.ledger.filter((row) => {
+      if (type !== 'all' && row.type !== type) {
+        return false;
+      }
+      if (!query) {
+        return true;
+      }
+      return (
+        row.reference.toLowerCase().includes(query) ||
+        row.description.toLowerCase().includes(query) ||
+        row.account.toLowerCase().includes(query)
+      );
+    });
+  });
+
+  readonly filteredSettlements = computed(() => {
+    const fin = this.fin();
+    if (!fin) {
+      return [];
+    }
+    const status = this.settlementStatus();
+    if (status === 'all') {
+      return fin.settlements;
+    }
+    return fin.settlements.filter((set) => set.status === status);
+  });
+
+  readonly unmatchedCount = computed(
+    () => (this.fin()?.reconciliation ?? []).filter((day) => !day.matched).length,
+  );
+
+  readonly reconVariance = computed(() =>
+    (this.fin()?.reconciliation ?? []).reduce((sum, day) => sum + day.variance, 0),
+  );
+
+  readonly pnlRows = computed(() => {
+    const summary = this.fin()?.summary;
+    if (!summary) {
+      return [];
+    }
+    const gross = Math.max(summary.grossRevenue, 1);
+    return [
+      { label: 'Gross sales', signed: summary.grossRevenue, width: 100, tone: 'base' },
+      {
+        label: 'Refunds / voids',
+        signed: -summary.refundsVoids,
+        width: Math.max(8, (summary.refundsVoids / gross) * 100),
+        tone: 'neg',
+      },
+      {
+        label: 'Payment fees',
+        signed: -summary.paymentFees,
+        width: Math.max(8, (summary.paymentFees / gross) * 100),
+        tone: 'neg',
+      },
+      {
+        label: 'Net operating',
+        signed: summary.netRevenue,
+        width: Math.max(12, (summary.netRevenue / gross) * 100),
+        tone: 'net',
+      },
+      {
+        label: 'VAT collected',
+        signed: summary.taxCollected,
+        width: Math.max(8, (summary.taxCollected / gross) * 100),
+        tone: 'base',
+      },
+    ];
+  });
+
+  tabCount(id: FinanceSection): number {
+    const fin = this.fin();
+    if (!fin) {
+      return 0;
+    }
+    switch (id) {
+      case 'accounts':
+        return fin.accounts.length;
+      case 'ledger':
+        return fin.ledger.length;
+      case 'settlements':
+        return fin.settlements.length;
+      case 'reconciliation':
+        return fin.reconciliation.length;
+      default:
+        return fin.alerts.length;
+    }
+  }
+
+  go(id: FinanceSection): void {
+    this.section.set(id);
+  }
 
   accountTypeLabel(type: FinanceAccount['type']): string {
     const map: Record<FinanceAccount['type'], string> = {
@@ -901,6 +1137,20 @@ export class AdminFinancePanelComponent {
       scheduled: 'Scheduled',
     };
     return map[status];
+  }
+
+  topShare(items: NamedShare[]): NamedShare {
+    return items.reduce((best, item) => (item.percent > best.percent ? item : best));
+  }
+
+  conic(items: NamedShare[]): string {
+    let acc = 0;
+    const stops = items.map((item) => {
+      const from = acc;
+      acc += item.percent;
+      return `${item.color} ${from}% ${acc}%`;
+    });
+    return `conic-gradient(${stops.join(', ')})`;
   }
 
   openAccount(acc: FinanceAccount): void {

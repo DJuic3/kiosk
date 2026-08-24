@@ -31,6 +31,30 @@ export interface AdminInventoryItem {
   status: 'ok' | 'low' | 'out';
 }
 
+export type InventoryActivityType =
+  | 'sale'
+  | 'void'
+  | 'refund'
+  | 'restock'
+  | 'adjustment'
+  | 'price'
+  | 'fault'
+  | 'system';
+
+export interface InventoryActivityEvent {
+  id: string;
+  sku: string;
+  type: InventoryActivityType;
+  at: string;
+  summary: string;
+  detail: string;
+  qtyDelta: number | null;
+  stockAfter: number | null;
+  amount: number | null;
+  reference: string;
+  actor: string;
+}
+
 export interface AdminMalfunction {
   id: string;
   type: string;

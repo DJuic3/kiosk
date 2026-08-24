@@ -1,10 +1,9 @@
 import { DatePipe } from '@angular/common';
-import { Component, OnDestroy, OnInit, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { environment } from '../../../../environments/environment';
-import { MqttMessage } from '../../../core/services/mqtt-ws.service';
 import { MachineControlService } from '../../../core/services/machine-control.service';
 import { TouchButtonComponent } from '../../../shared/components/touch-button/touch-button.component';
 
@@ -86,7 +85,7 @@ import { TouchButtonComponent } from '../../../shared/components/touch-button/to
           <h2>Dispense command</h2>
           <label>
             Slot / selection
-            <input type="number" min="1" [(ngModel)]="selection" />
+            <input type="number" min="1" [(ngModel)]="selection" (ngModelChange)="onSelectionChange()" />
           </label>
           <label>
             Topic (auto)
@@ -115,17 +114,48 @@ import { TouchButtonComponent } from '../../../shared/components/touch-button/to
       <article class="panel log">
         <div class="log__head">
           <h2>Live messages</h2>
+          <span class="log__count">{{ control.sessionLogs().length }} this visit</span>
           <app-touch-button variant="ghost" (pressed)="clearLog()">Clear</app-touch-button>
         </div>
+        <p class="hint">This visit only. Leave the page and these reset; history is kept in All logs.</p>
         <div class="log__list">
-          @for (msg of log(); track msg.at + msg.topic + msg.payload) {
-            <div class="log__row" [class.outgoing]="msg.outgoing">
-              <time>{{ msg.at | date: 'HH:mm:ss' }}</time>
+          @for (msg of control.sessionLogs(); track msg.id) {
+            <div class="log__row" [class.outgoing]="msg.outgoing" [class.system]="msg.source === 'system'">
+              <div class="log__meta">
+                <time>{{ msg.at | date: 'HH:mm:ss' }}</time>
+                <span class="log__dir">{{ msg.source === 'system' ? 'sys' : msg.outgoing ? 'out' : 'in' }}</span>
+              </div>
               <strong>{{ msg.topic }}</strong>
               <code>{{ msg.payload }}</code>
             </div>
           } @empty {
             <p class="empty">Connect and send a command — incoming MQTT traffic appears here.</p>
+          }
+        </div>
+      </article>
+
+      <article class="panel log log--all">
+        <div class="log__head">
+          <h2>All logs</h2>
+          <span class="log__count">{{ control.allLogs().length }} stored</span>
+          <app-touch-button variant="ghost" (pressed)="clearAllLogs()">Clear all</app-touch-button>
+        </div>
+        <p class="hint">
+          Saved in this browser (up to 500). Stays after you leave this page or refresh. MQTT stays
+          connected in the background so traffic is still recorded.
+        </p>
+        <div class="log__list log__list--tall">
+          @for (msg of control.allLogs(); track msg.id) {
+            <div class="log__row" [class.outgoing]="msg.outgoing" [class.system]="msg.source === 'system'">
+              <div class="log__meta">
+                <time>{{ msg.at | date: 'yyyy-MM-dd HH:mm:ss' }}</time>
+                <span class="log__dir">{{ msg.source === 'system' ? 'sys' : msg.outgoing ? 'out' : 'in' }}</span>
+              </div>
+              <strong>{{ msg.topic }}</strong>
+              <code>{{ msg.payload }}</code>
+            </div>
+          } @empty {
+            <p class="empty">No stored logs yet. Connect or send a dispense — history appears here.</p>
           }
         </div>
       </article>
@@ -292,6 +322,14 @@ import { TouchButtonComponent } from '../../../shared/components/touch-button/to
       display: flex;
       justify-content: space-between;
       align-items: center;
+      gap: 10px;
+    }
+
+    .log__count {
+      margin-left: auto;
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-muted);
     }
 
     .log__list {
@@ -299,6 +337,10 @@ import { TouchButtonComponent } from '../../../shared/components/touch-button/to
       overflow: auto;
       display: grid;
       gap: 8px;
+    }
+
+    .log__list--tall {
+      max-height: 520px;
     }
 
     .log__row {
@@ -312,6 +354,32 @@ import { TouchButtonComponent } from '../../../shared/components/touch-button/to
 
     .log__row.outgoing {
       background: var(--primary-soft);
+    }
+
+    .log__row.system {
+      background: #eef1f8;
+    }
+
+    .log__meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .log__dir {
+      font-size: 0.68rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: #dce3f0;
+      color: var(--text-muted);
+    }
+
+    .log__row.outgoing .log__dir {
+      background: var(--primary);
+      color: #fff;
     }
 
     .log__row time {
@@ -344,24 +412,17 @@ export class MachineControlComponent implements OnInit, OnDestroy {
   payloadJson = '';
   readonly quickSlots = [1, 6, 12, 18, 24];
 
-  readonly log = signal<(MqttMessage & { outgoing?: boolean })[]>([]);
-
-  private sub: Subscription | null = null;
   private connectSub: Subscription | null = null;
   private urlEditedManually = false;
 
   ngOnInit(): void {
     this.loadSettings();
     this.syncPayload();
-    this.sub = this.control.mqtt.messages$.subscribe((msg) => {
-      this.log.update((rows) => [msg, ...rows].slice(0, 100));
-    });
+    this.control.startSession();
   }
 
   ngOnDestroy(): void {
-    this.sub?.unsubscribe();
     this.connectSub?.unsubscribe();
-    this.control.disconnect();
   }
 
   stateLabel(): string {
@@ -417,6 +478,10 @@ export class MachineControlComponent implements OnInit, OnDestroy {
     this.persistSettings();
   }
 
+  onSelectionChange(): void {
+    this.syncPayload();
+  }
+
   setSlot(slot: number): void {
     this.selection = slot;
     this.syncPayload();
@@ -432,23 +497,15 @@ export class MachineControlComponent implements OnInit, OnDestroy {
       selections = [this.selection];
     }
 
-    this.control.sendDispenseCommand(selections, this.machineId).subscribe({
-      next: (msg) => {
-        this.log.update((rows) => [
-          {
-            topic: msg.topic,
-            payload: msg.payload,
-            at: msg.at,
-            outgoing: true,
-          },
-          ...rows,
-        ].slice(0, 100));
-      },
-    });
+    this.control.sendDispenseCommand(selections, this.machineId).subscribe();
   }
 
   clearLog(): void {
-    this.log.set([]);
+    this.control.clearSessionLogs();
+  }
+
+  clearAllLogs(): void {
+    this.control.clearAllLogs();
   }
 
   private syncPayload(): void {

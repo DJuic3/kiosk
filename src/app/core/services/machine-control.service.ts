@@ -1,4 +1,4 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import { Observable, of, take, timer } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import { DispenseResult, Order } from '../models/order.model';
@@ -13,7 +13,18 @@ export interface MachineControlSettings {
   machineId: string;
 }
 
+export interface MachineLogEntry {
+  id: string;
+  topic: string;
+  payload: string;
+  at: string;
+  outgoing?: boolean;
+  source?: 'mqtt' | 'system';
+}
+
 const STORAGE_KEY = 'vending_machine_control_settings';
+const LOG_STORAGE_KEY = 'vending_machine_control_logs';
+const MAX_STORED_LOGS = 500;
 /** Native MQTT port — browsers must use WebSocket on 9001 instead. */
 const MQTT_TCP_PORT = 1883;
 const MQTT_WS_PORT = 9001;
@@ -21,6 +32,24 @@ const MQTT_WS_PORT = 9001;
 @Injectable({ providedIn: 'root' })
 export class MachineControlService {
   readonly mqtt = inject(MqttWsService);
+  /** Full history — survives leaving the page and browser refresh. */
+  readonly allLogs = signal<MachineLogEntry[]>([]);
+  /** Messages since this visit to /dev/machine. */
+  readonly sessionLogs = signal<MachineLogEntry[]>([]);
+
+  private sessionStartedAt = '';
+
+  constructor() {
+    this.allLogs.set(this.loadStoredLogs());
+    this.mqtt.messages$.subscribe((msg) => this.appendLog(msg, false, 'mqtt'));
+    this.mqtt.connected$.subscribe(() =>
+      this.appendLog(
+        { topic: 'system/connection', payload: 'Broker connected', at: new Date().toISOString() },
+        false,
+        'system',
+      ),
+    );
+  }
 
   loadSettings(): MachineControlSettings {
     const defaults: MachineControlSettings = {
@@ -117,6 +146,75 @@ export class MachineControlService {
     );
   }
 
+  startSession(): void {
+    this.sessionStartedAt = new Date().toISOString();
+    this.sessionLogs.set([]);
+  }
+
+  clearSessionLogs(): void {
+    this.sessionLogs.set([]);
+  }
+
+  clearAllLogs(): void {
+    this.allLogs.set([]);
+    this.sessionLogs.set([]);
+    this.persistLogs([]);
+  }
+
+  disconnect(): void {
+    const wasConnected = this.mqtt.state() === 'connected' || this.mqtt.state() === 'connecting';
+    this.mqtt.disconnect();
+    if (wasConnected) {
+      this.appendLog(
+        { topic: 'system/connection', payload: 'Broker disconnected', at: new Date().toISOString() },
+        false,
+        'system',
+      );
+    }
+  }
+
+  private appendLog(msg: Pick<MqttMessage, 'topic' | 'payload' | 'at'>, outgoing: boolean, source: 'mqtt' | 'system'): void {
+    const entry: MachineLogEntry = {
+      id: `${msg.at}-${Math.random().toString(36).slice(2, 9)}`,
+      topic: msg.topic,
+      payload: msg.payload,
+      at: msg.at,
+      outgoing,
+      source,
+    };
+
+    this.allLogs.update((rows) => {
+      const next = [entry, ...rows].slice(0, MAX_STORED_LOGS);
+      this.persistLogs(next);
+      return next;
+    });
+
+    if (this.sessionStartedAt && entry.at >= this.sessionStartedAt) {
+      this.sessionLogs.update((rows) => [entry, ...rows].slice(0, MAX_STORED_LOGS));
+    }
+  }
+
+  private loadStoredLogs(): MachineLogEntry[] {
+    try {
+      const raw = localStorage.getItem(LOG_STORAGE_KEY);
+      if (!raw) {
+        return [];
+      }
+      const parsed = JSON.parse(raw) as MachineLogEntry[];
+      return Array.isArray(parsed) ? parsed.slice(0, MAX_STORED_LOGS) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private persistLogs(logs: MachineLogEntry[]): void {
+    try {
+      localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(logs));
+    } catch {
+      // quota / private mode
+    }
+  }
+
   connect(settings = this.loadSettings()): Observable<void> {
     settings = this.normalizeSettings(settings);
 
@@ -146,10 +244,6 @@ export class MachineControlService {
 
       this.mqtt.connect(settings.brokerUrl.trim(), `kiosk-${Date.now()}`);
     });
-  }
-
-  disconnect(): void {
-    this.mqtt.disconnect();
   }
 
   /** Same publish path used by the Machine control page. */
@@ -185,6 +279,7 @@ export class MachineControlService {
           });
 
           this.mqtt.publish(topic, payload);
+          this.appendLog({ topic, payload, at: new Date().toISOString() }, true, 'mqtt');
         },
         error: (err) => subscriber.error(err),
       });

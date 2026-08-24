@@ -1,9 +1,14 @@
-import { CurrencyPipe, UpperCasePipe } from '@angular/common';
+import { CurrencyPipe, DatePipe, UpperCasePipe } from '@angular/common';
 import { Component, computed, effect, inject, signal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { AdminInventoryItem } from '../../../core/models/admin.model';
+import { switchMap, of } from 'rxjs';
+import {
+  AdminInventoryItem,
+  InventoryActivityEvent,
+  InventoryActivityType,
+} from '../../../core/models/admin.model';
 import {
   AdminDataService,
   AdminInventoryInput,
@@ -13,94 +18,163 @@ import { TouchButtonComponent } from '../../../shared/components/touch-button/to
 
 type InventoryMode = 'index' | 'view' | 'create' | 'edit';
 type StockFilter = 'all' | 'ok' | 'low' | 'out';
+type SortKey = 'attention' | 'slot' | 'name' | 'category' | 'price' | 'stock';
+type ActivityFilter = 'all' | 'sale' | 'restock' | 'adjustment' | 'price' | 'fault';
 
 @Component({
   selector: 'app-admin-inventory-panel',
   standalone: true,
-  imports: [CurrencyPipe, UpperCasePipe, FormsModule, TouchButtonComponent],
+  imports: [CurrencyPipe, DatePipe, UpperCasePipe, FormsModule, TouchButtonComponent],
   template: `
     <section class="inv">
       @if (mode() === 'index') {
         <div class="inv__head">
           <div>
             <h1>Inventory</h1>
-            <p class="sub">Manage slots, stock levels and refill thresholds.</p>
+            <p class="sub">Planogram for this machine — filter, sort and page every slot.</p>
           </div>
           <app-touch-button variant="primary" (pressed)="openCreate()">+ Add item</app-touch-button>
         </div>
 
         <div class="summary-row">
-          <article class="summary-card">
-            <span>Total SKUs</span>
+          <button type="button" class="summary-card" [class.active]="filter() === 'all'" (click)="setFilter('all')">
+            <span>All slots</span>
             <strong>{{ summary().total }}</strong>
-          </article>
-          <article class="summary-card ok">
+          </button>
+          <button type="button" class="summary-card ok" [class.active]="filter() === 'ok'" (click)="setFilter('ok')">
             <span>Healthy</span>
             <strong>{{ summary().ok }}</strong>
-          </article>
-          <article class="summary-card warn">
+          </button>
+          <button type="button" class="summary-card warn" [class.active]="filter() === 'low'" (click)="setFilter('low')">
             <span>Low stock</span>
             <strong>{{ summary().low }}</strong>
-          </article>
-          <article class="summary-card danger">
+          </button>
+          <button type="button" class="summary-card danger" [class.active]="filter() === 'out'" (click)="setFilter('out')">
             <span>Out of stock</span>
             <strong>{{ summary().out }}</strong>
-          </article>
+          </button>
         </div>
 
-        <div class="filter-block">
+        <div class="toolbar">
           <label class="filter-field search-field">
             Search
             <input
               type="search"
               [ngModel]="searchQuery()"
-              (ngModelChange)="searchQuery.set($event)"
+              (ngModelChange)="onSearch($event)"
               placeholder="Name, SKU, slot…"
             />
           </label>
           <label class="filter-field">
-            Status
-            <select [ngModel]="filter()" (ngModelChange)="onStatusFilter($event)">
-              @for (f of statusFilters; track f.id) {
-                <option [value]="f.id">{{ f.label }}</option>
+            Category
+            <select [ngModel]="categoryFilter()" (ngModelChange)="onCategoryFilter($event)">
+              <option value="all">All categories</option>
+              @for (cat of categories; track cat.id) {
+                <option [value]="cat.id">{{ cat.label }}</option>
               }
             </select>
           </label>
+          <label class="filter-field">
+            Rows
+            <select [ngModel]="pageSize()" (ngModelChange)="onPageSize($event)">
+              @for (size of pageSizes; track size) {
+                <option [ngValue]="size">{{ size === 0 ? 'All' : size }}</option>
+              }
+            </select>
+          </label>
+          <p class="result-count">{{ rangeLabel() }}</p>
         </div>
 
-        <div class="card-grid">
-          @for (item of filteredInventory(); track item.sku) {
-            <article class="inv-card" [attr.data-status]="item.status">
-              <div class="inv-card__top">
-                @if (itemImage(item); as img) {
-                  <img [src]="img" [alt]="item.name" />
-                } @else {
-                  <div class="inv-card__placeholder">{{ item.slotCode }}</div>
-                }
-                <span class="pill" [attr.data-status]="item.status">{{ item.status }}</span>
-              </div>
-              <div class="inv-card__body">
-                <small>Slot {{ item.slotCode }} · {{ item.category }}</small>
-                <h2>{{ item.name }}</h2>
-                <p>{{ item.sku }} · {{ item.price | currency: 'USD' }}</p>
-                <div class="stock-bar">
-                  <div class="stock-bar__fill" [style.width.%]="fillPercent(item)"></div>
-                </div>
-                <div class="stock-meta">
-                  <span>{{ item.stock }} / {{ item.capacity }} units</span>
-                  <span>Par {{ item.parLevel }}</span>
-                </div>
-              </div>
-              <div class="inv-card__actions">
-                <button type="button" (click)="openView(item)">View</button>
-                <button type="button" (click)="openEdit(item)">Edit</button>
-                <button type="button" class="danger" (click)="remove(item)">Delete</button>
-              </div>
-            </article>
-          } @empty {
-            <div class="empty">No inventory items match this search or filter.</div>
-          }
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>
+                  <button type="button" class="sort" (click)="toggleSort('slot')" [class.active]="sortKey() === 'slot'">
+                    Slot {{ sortMark('slot') }}
+                  </button>
+                </th>
+                <th>
+                  <button type="button" class="sort" (click)="toggleSort('name')" [class.active]="sortKey() === 'name'">
+                    Product {{ sortMark('name') }}
+                  </button>
+                </th>
+                <th>
+                  <button type="button" class="sort" (click)="toggleSort('category')" [class.active]="sortKey() === 'category'">
+                    Category {{ sortMark('category') }}
+                  </button>
+                </th>
+                <th>
+                  <button type="button" class="sort" (click)="toggleSort('price')" [class.active]="sortKey() === 'price'">
+                    Price {{ sortMark('price') }}
+                  </button>
+                </th>
+                <th>
+                  <button type="button" class="sort" (click)="toggleSort('stock')" [class.active]="sortKey() === 'stock'">
+                    Stock {{ sortMark('stock') }}
+                  </button>
+                </th>
+                <th>
+                  <button type="button" class="sort" (click)="toggleSort('attention')" [class.active]="sortKey() === 'attention'">
+                    Status {{ sortMark('attention') }}
+                  </button>
+                </th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (item of pagedInventory(); track item.sku) {
+                <tr class="data-row" [attr.data-status]="item.status" (click)="openView(item)">
+                  <td class="slot-cell"><span>{{ item.slotCode }}</span></td>
+                  <td>
+                    <div class="product-cell">
+                      @if (itemImage(item); as img) {
+                        <img [src]="img" [alt]="" />
+                      } @else {
+                        <div class="thumb-fallback">{{ item.slotCode }}</div>
+                      }
+                      <div>
+                        <strong>{{ item.name }}</strong>
+                        <small>{{ item.sku }}</small>
+                      </div>
+                    </div>
+                  </td>
+                  <td>{{ categoryLabel(item.category) }}</td>
+                  <td>{{ item.price | currency: 'USD' }}</td>
+                  <td class="stock-cell">
+                    <div class="stock-line">
+                      <strong>{{ item.stock }}</strong>
+                      <span>/ {{ item.capacity }} · par {{ item.parLevel }}</span>
+                    </div>
+                    <div class="stock-bar" [attr.data-status]="item.status">
+                      <div class="stock-bar__fill" [style.width.%]="fillPercent(item)"></div>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="pill" [attr.data-status]="item.status">{{ item.status }}</span>
+                  </td>
+                  <td class="actions" (click)="$event.stopPropagation()">
+                    <button type="button" (click)="openView(item)">View</button>
+                    <button type="button" (click)="openEdit(item)">Edit</button>
+                    <button type="button" class="danger" (click)="remove(item)">Delete</button>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="7" class="empty">No slots match these filters.</td>
+                </tr>
+              }
+            </tbody>
+          </table>
         </div>
+
+        @if (pageCount() > 1) {
+          <div class="pager">
+            <button type="button" [disabled]="page() <= 1" (click)="prevPage()">Previous</button>
+            <span>Page {{ Math.min(page(), pageCount()) }} of {{ pageCount() }}</span>
+            <button type="button" [disabled]="page() >= pageCount()" (click)="nextPage()">Next</button>
+          </div>
+        }
       }
 
       @if (mode() === 'view' && selected(); as item) {
@@ -161,6 +235,84 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
             </article>
           </aside>
         </div>
+
+        <article class="panel activity-panel">
+          <div class="activity-head">
+            <div>
+              <h3>Product activity</h3>
+              <p>Sales, restocks, adjustments and other movements for this SKU.</p>
+            </div>
+            <div class="activity-summary">
+              <div>
+                <span>Sold</span>
+                <strong>{{ activityStats().sold }}</strong>
+              </div>
+              <div>
+                <span>Restocked</span>
+                <strong>{{ activityStats().restocked }}</strong>
+              </div>
+              <div>
+                <span>Adjusted</span>
+                <strong>{{ activityStats().adjusted }}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="activity-filters">
+            @for (chip of activityFilters; track chip.id) {
+              <button
+                type="button"
+                [class.active]="activityFilter() === chip.id"
+                (click)="activityFilter.set(chip.id)"
+              >
+                {{ chip.label }}
+              </button>
+            }
+          </div>
+
+          <div class="table-wrap compact">
+            <table>
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>Type</th>
+                  <th>What happened</th>
+                  <th>Qty</th>
+                  <th>Stock after</th>
+                  <th>Amount</th>
+                  <th>Reference</th>
+                  <th>By</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of filteredActivity(); track row.id) {
+                  <tr [attr.data-type]="row.type">
+                    <td>
+                      <strong>{{ row.at | date: 'dd MMM' }}</strong>
+                      <small>{{ row.at | date: 'HH:mm' }}</small>
+                    </td>
+                    <td><span class="type-pill" [attr.data-type]="row.type">{{ row.type }}</span></td>
+                    <td>
+                      <strong>{{ row.summary }}</strong>
+                      <small>{{ row.detail }}</small>
+                    </td>
+                    <td class="qty" [attr.data-sign]="qtySign(row.qtyDelta)">
+                      {{ qtyLabel(row.qtyDelta) }}
+                    </td>
+                    <td>{{ row.stockAfter ?? '—' }}</td>
+                    <td>{{ row.amount != null ? (row.amount | currency: 'USD') : '—' }}</td>
+                    <td>{{ row.reference }}</td>
+                    <td>{{ row.actor }}</td>
+                  </tr>
+                } @empty {
+                  <tr>
+                    <td colspan="8" class="empty">No activity for this filter.</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </article>
       }
 
       @if (mode() === 'create' || mode() === 'edit') {
@@ -404,6 +556,14 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
       border-radius: 14px;
       background: #fff;
       border: 1px solid var(--border);
+      cursor: pointer;
+      text-align: left;
+      font: inherit;
+    }
+
+    .summary-card.active {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-soft);
     }
 
     .summary-card span {
@@ -424,12 +584,12 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
     .summary-card.warn strong { color: var(--warning); }
     .summary-card.danger strong { color: #c62828; }
 
-    .filter-block {
+    .toolbar {
       display: flex;
       flex-wrap: wrap;
       align-items: flex-end;
       gap: 12px;
-      margin-bottom: 16px;
+      margin-bottom: 12px;
     }
 
     .filter-field {
@@ -474,10 +634,167 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
       box-shadow: 0 0 0 3px var(--primary-soft);
     }
 
-    .card-grid {
+    .result-count {
+      margin: 0 0 8px auto;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .table-wrap {
+      overflow: auto;
+      border-radius: 16px;
+      background: #fff;
+      border: 1px solid var(--border);
+      max-height: calc(100vh - 280px);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    th,
+    td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+      white-space: nowrap;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #f7f8fc;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .sort {
+      padding: 0;
+      border: none;
+      background: none;
+      font: inherit;
+      font-weight: 800;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+
+    .sort.active {
+      color: var(--primary-dark);
+    }
+
+    .data-row {
+      cursor: pointer;
+    }
+
+    .data-row:hover {
+      background: #f7f8fc;
+    }
+
+    .data-row[data-status='out'] {
+      background: #fff8f8;
+    }
+
+    .data-row[data-status='low'] {
+      background: #fffaf0;
+    }
+
+    .slot-cell span {
+      display: inline-grid;
+      place-items: center;
+      min-width: 40px;
+      padding: 4px 8px;
+      border-radius: 8px;
+      background: var(--primary-soft);
+      color: var(--primary-dark);
+      font-weight: 800;
+      font-size: 0.8rem;
+    }
+
+    .product-cell {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 220px;
+    }
+
+    .product-cell img,
+    .thumb-fallback {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      object-fit: contain;
+      background: #eef1f8;
+      flex-shrink: 0;
+    }
+
+    .thumb-fallback {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: 14px;
+      place-items: center;
+      font-size: 0.65rem;
+      font-weight: 800;
+      color: var(--primary-dark);
+    }
+
+    .product-cell strong {
+      display: block;
+      font-size: 0.9rem;
+    }
+
+    .product-cell small {
+      display: block;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
+    .stock-cell {
+      min-width: 160px;
+    }
+
+    .stock-line {
+      display: flex;
+      gap: 4px;
+      align-items: baseline;
+      margin-bottom: 4px;
+      font-size: 0.8rem;
+    }
+
+    .stock-line span {
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .pager {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 12px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+
+    .pager button {
+      min-height: 38px;
+      padding: 0 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .pager button:disabled {
+      opacity: 0.45;
+      cursor: default;
     }
 
     .inv-card {
@@ -578,13 +895,14 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
       background: linear-gradient(90deg, var(--primary), #4c6ef5);
     }
 
-    .inv-card[data-status='low'] .stock-bar__fill {
+    .stock-bar[data-status='low'] .stock-bar__fill {
       background: var(--warning);
     }
 
+    .stock-bar[data-status='out'] .stock-bar__fill,
     .inv-card[data-status='out'] .stock-bar__fill {
       background: #c62828;
-      width: 4% !important;
+      min-width: 4px;
     }
 
     .stock-meta {
@@ -644,13 +962,10 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
     }
 
     .empty {
-      grid-column: 1 / -1;
       padding: 40px;
-      border-radius: 16px;
-      background: #fff;
-      border: 1px dashed var(--border);
       text-align: center;
       color: var(--text-muted);
+      white-space: normal;
     }
 
     .view-layout {
@@ -703,6 +1018,118 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
     .view-side {
       display: grid;
       gap: 14px;
+    }
+
+    .activity-panel {
+      margin-top: 16px;
+    }
+
+    .activity-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .activity-head h3 {
+      margin: 0 0 4px;
+      font-size: 1.05rem;
+      font-weight: 800;
+      text-transform: none;
+      color: var(--text);
+    }
+
+    .activity-head p {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .activity-summary {
+      display: flex;
+      gap: 18px;
+    }
+
+    .activity-summary span {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .activity-summary strong {
+      font-size: 1.2rem;
+      font-weight: 800;
+      color: var(--primary-dark);
+    }
+
+    .activity-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .activity-filters button {
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: #fff;
+      font: inherit;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .activity-filters button.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .qty[data-sign='pos'] { color: var(--success); font-weight: 800; }
+    .qty[data-sign='neg'] { color: #c62828; font-weight: 800; }
+
+    .type-pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #eef1f8;
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .type-pill[data-type='sale'] { background: var(--primary-soft); color: var(--primary-dark); }
+    .type-pill[data-type='restock'] { background: #e8f5ee; color: var(--success); }
+    .type-pill[data-type='adjustment'] { background: #fff4e0; color: var(--warning); }
+    .type-pill[data-type='price'] { background: #eef1f8; color: var(--text-muted); }
+    .type-pill[data-type='fault'],
+    .type-pill[data-type='void'],
+    .type-pill[data-type='refund'] { background: #ffebee; color: #c62828; }
+    .type-pill[data-type='system'] { background: var(--primary-soft); color: var(--primary-dark); }
+
+    .table-wrap.compact {
+      border: none;
+      border-radius: 0;
+      max-height: none;
+    }
+
+    .activity-panel table { min-width: 820px; }
+
+    .activity-panel td strong { display: block; }
+    .activity-panel td small {
+      display: block;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 600;
+      white-space: normal;
     }
 
     .panel {
@@ -1095,6 +1522,14 @@ type StockFilter = 'all' | 'ok' | 'low' | 'out';
         grid-template-columns: 1fr;
       }
 
+      .result-count {
+        margin-left: 0;
+      }
+
+      .table-wrap {
+        max-height: none;
+      }
+
       .edit-preview {
         position: static;
       }
@@ -1112,18 +1547,62 @@ export class AdminInventoryPanelComponent {
   readonly categories = CATEGORIES;
   readonly mode = signal<InventoryMode>('index');
   readonly selected = signal<AdminInventoryItem | null>(null);
+  readonly selectedSku = computed(() => this.selected()?.sku ?? '');
   readonly filter = signal<StockFilter>('all');
+  readonly categoryFilter = signal('all');
   readonly searchQuery = signal('');
+  readonly sortKey = signal<SortKey>('attention');
+  readonly sortDir = signal<'asc' | 'desc'>('asc');
+  readonly page = signal(1);
+  readonly pageSize = signal(25);
   readonly formError = signal('');
   readonly imageError = signal('');
   readonly editingSku = signal<string | null>(null);
-
-  readonly statusFilters: { id: StockFilter; label: string }[] = [
+  readonly pageSizes = [25, 50, 100, 0];
+  readonly activityFilter = signal<ActivityFilter>('all');
+  readonly activityFilters: { id: ActivityFilter; label: string }[] = [
     { id: 'all', label: 'All' },
-    { id: 'ok', label: 'OK' },
-    { id: 'low', label: 'Low' },
-    { id: 'out', label: 'Out' },
+    { id: 'sale', label: 'Sales' },
+    { id: 'restock', label: 'Restocks' },
+    { id: 'adjustment', label: 'Adjustments' },
+    { id: 'price', label: 'Price' },
+    { id: 'fault', label: 'Faults' },
   ];
+
+  readonly activity = toSignal(
+    toObservable(this.selectedSku).pipe(
+      switchMap((sku) =>
+        sku ? this.data.getInventoryActivity(sku) : of([] as InventoryActivityEvent[]),
+      ),
+    ),
+    { initialValue: [] as InventoryActivityEvent[] },
+  );
+
+  readonly filteredActivity = computed(() => {
+    const rows = this.activity();
+    const filter = this.activityFilter();
+    if (filter === 'all') {
+      return rows;
+    }
+    return rows.filter((row) => this.matchesActivityFilter(row.type, filter));
+  });
+
+  readonly activityStats = computed(() => {
+    const rows = this.activity();
+    return {
+      sold: Math.abs(
+        rows
+          .filter((row) => row.type === 'sale')
+          .reduce((sum, row) => sum + (row.qtyDelta ?? 0), 0),
+      ),
+      restocked: rows
+        .filter((row) => row.type === 'restock')
+        .reduce((sum, row) => sum + (row.qtyDelta ?? 0), 0),
+      adjusted: rows
+        .filter((row) => row.type === 'adjustment')
+        .reduce((sum, row) => sum + Math.abs(row.qtyDelta ?? 0), 0),
+    };
+  });
 
   constructor() {
     effect(() => {
@@ -1133,6 +1612,7 @@ export class AdminInventoryPanelComponent {
         return;
       }
       this.applyRoute(params.get('id'), params.get('mode'), items);
+      this.activityFilter.set('all');
     });
   }
 
@@ -1140,10 +1620,13 @@ export class AdminInventoryPanelComponent {
 
   readonly filteredInventory = computed(() => {
     const f = this.filter();
+    const category = this.categoryFilter();
     const query = this.searchQuery().trim().toLowerCase();
     return this.inventory().filter((item) => {
-      const statusOk = f === 'all' || item.status === f;
-      if (!statusOk) {
+      if (f !== 'all' && item.status !== f) {
+        return false;
+      }
+      if (category !== 'all' && item.category !== category) {
         return false;
       }
       if (!query) {
@@ -1159,6 +1642,49 @@ export class AdminInventoryPanelComponent {
     });
   });
 
+  readonly sortedInventory = computed(() => {
+    const rows = [...this.filteredInventory()];
+    const key = this.sortKey();
+    const dir = this.sortDir() === 'asc' ? 1 : -1;
+    rows.sort((a, b) => dir * this.compareItems(a, b, key));
+    return rows;
+  });
+
+  readonly pageCount = computed(() => {
+    const size = this.pageSize();
+    const total = this.sortedInventory().length;
+    if (size === 0) {
+      return 1;
+    }
+    return Math.max(1, Math.ceil(total / size));
+  });
+
+  readonly pagedInventory = computed(() => {
+    const rows = this.sortedInventory();
+    const size = this.pageSize();
+    if (size === 0) {
+      return rows;
+    }
+    const page = Math.min(this.page(), this.pageCount());
+    const start = (page - 1) * size;
+    return rows.slice(start, start + size);
+  });
+
+  readonly rangeLabel = computed(() => {
+    const total = this.sortedInventory().length;
+    if (total === 0) {
+      return '0 slots';
+    }
+    const size = this.pageSize();
+    if (size === 0) {
+      return `1–${total} of ${total} slots`;
+    }
+    const page = Math.min(this.page(), this.pageCount());
+    const start = (page - 1) * size + 1;
+    const end = Math.min(page * size, total);
+    return `${start}–${end} of ${total} slots`;
+  });
+
   readonly summary = computed(() => {
     const items = this.inventory();
     return {
@@ -1171,8 +1697,48 @@ export class AdminInventoryPanelComponent {
 
   form = this.blankForm();
 
-  onStatusFilter(value: string): void {
-    this.filter.set(value as StockFilter);
+  setFilter(value: StockFilter): void {
+    this.filter.set(value);
+    this.page.set(1);
+  }
+
+  onSearch(value: string): void {
+    this.searchQuery.set(value);
+    this.page.set(1);
+  }
+
+  onCategoryFilter(value: string): void {
+    this.categoryFilter.set(value);
+    this.page.set(1);
+  }
+
+  onPageSize(value: number | string): void {
+    this.pageSize.set(Number(value));
+    this.page.set(1);
+  }
+
+  toggleSort(key: SortKey): void {
+    if (this.sortKey() === key) {
+      this.sortDir.update((dir) => (dir === 'asc' ? 'desc' : 'asc'));
+      return;
+    }
+    this.sortKey.set(key);
+    this.sortDir.set('asc');
+  }
+
+  sortMark(key: SortKey): string {
+    if (this.sortKey() !== key) {
+      return '';
+    }
+    return this.sortDir() === 'asc' ? '↑' : '↓';
+  }
+
+  prevPage(): void {
+    this.page.update((page) => Math.max(1, page - 1));
+  }
+
+  nextPage(): void {
+    this.page.update((page) => Math.min(this.pageCount(), page + 1));
   }
 
   itemImage(item: AdminInventoryItem): string | null {
@@ -1214,9 +1780,79 @@ export class AdminInventoryPanelComponent {
     return CATEGORIES.find((c) => c.id === category)?.label ?? category;
   }
 
+  qtyLabel(qty: number | null): string {
+    if (qty == null) {
+      return '—';
+    }
+    if (qty > 0) {
+      return `+${qty}`;
+    }
+    return String(qty);
+  }
+
+  qtySign(qty: number | null): 'pos' | 'neg' | 'zero' {
+    if (qty == null || qty === 0) {
+      return 'zero';
+    }
+    return qty > 0 ? 'pos' : 'neg';
+  }
+
   fillPercent(item: AdminInventoryItem): number {
-    if (item.capacity <= 0) return 0;
+    if (item.capacity <= 0) {
+      return 0;
+    }
     return Math.min(100, Math.round((item.stock / item.capacity) * 100));
+  }
+
+  private matchesActivityFilter(type: InventoryActivityType, filter: ActivityFilter): boolean {
+    if (filter === 'sale') {
+      return type === 'sale' || type === 'void' || type === 'refund';
+    }
+    if (filter === 'fault') {
+      return type === 'fault' || type === 'system';
+    }
+    return type === filter;
+  }
+
+  private compareItems(a: AdminInventoryItem, b: AdminInventoryItem, key: SortKey): number {
+    switch (key) {
+      case 'slot':
+        return this.slotRank(a.slotCode) - this.slotRank(b.slotCode);
+      case 'name':
+        return a.name.localeCompare(b.name);
+      case 'category':
+        return this.categoryLabel(a.category).localeCompare(this.categoryLabel(b.category));
+      case 'price':
+        return a.price - b.price;
+      case 'stock':
+        return this.fillPercent(a) - this.fillPercent(b);
+      case 'attention':
+      default: {
+        const status = this.statusRank(a.status) - this.statusRank(b.status);
+        if (status !== 0) {
+          return status;
+        }
+        return this.slotRank(a.slotCode) - this.slotRank(b.slotCode);
+      }
+    }
+  }
+
+  private slotRank(slot: string): number {
+    const match = slot.match(/^([A-Za-z]+)(\d+)$/);
+    if (!match) {
+      return 0;
+    }
+    return (match[1].toUpperCase().charCodeAt(0) - 64) * 100 + Number(match[2]);
+  }
+
+  private statusRank(status: AdminInventoryItem['status']): number {
+    if (status === 'out') {
+      return 0;
+    }
+    if (status === 'low') {
+      return 1;
+    }
+    return 2;
   }
 
   previewFill(): number {

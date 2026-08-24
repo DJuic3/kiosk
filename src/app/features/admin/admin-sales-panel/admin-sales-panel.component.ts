@@ -113,7 +113,6 @@ type PaymentFilter = 'all' | 'ecocash' | 'card' | 'qr' | 'cash';
                   </td>
                   <td class="actions">
                     <button type="button" (click)="openView(sale)">View</button>
-                    <button type="button" class="danger" (click)="remove(sale)">Delete</button>
                   </td>
                 </tr>
               } @empty {
@@ -132,9 +131,6 @@ type PaymentFilter = 'all' | 'ecocash' | 'card' | 'qr' | 'cash';
             <button type="button" class="back-link" (click)="backToIndex()">← Back to sales</button>
             <h1>Sale details</h1>
             <p class="sub">Transaction record for {{ sale.receiptNumber }}</p>
-          </div>
-          <div class="head-actions">
-            <app-touch-button variant="danger" (pressed)="remove(sale)">Delete</app-touch-button>
           </div>
         </div>
 
@@ -1001,15 +997,6 @@ export class AdminSalesPanelComponent {
           queryParams: { id: sale.id },
         });
       },
-    });
-  }
-
-  remove(sale: AdminSale): void {
-    if (!confirm(`Delete sale ${sale.receiptNumber}?`)) {
-      return;
-    }
-    this.data.deleteSale(sale.id).subscribe({
-      next: () => this.backToIndex(),
     });
   }
 

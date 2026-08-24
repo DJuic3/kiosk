@@ -11,6 +11,7 @@ import {
   AdminSale,
   AdminSecurityEvent,
   AdminSystemUser,
+  InventoryActivityEvent,
 } from '../models/admin.model';
 import { environment } from '../../../environments/environment';
 
@@ -32,25 +33,283 @@ function deriveInventoryStatus(
   return 'ok';
 }
 
+function activityForSku(sku: string, item?: AdminInventoryItem): InventoryActivityEvent[] {
+  const name = item?.name ?? 'Product';
+  const slot = item?.slotCode ?? '—';
+  const price = item?.price ?? 0;
+  const stock = item?.stock ?? 0;
+  const baseSku = sku.replace(/-[A-Z]\d+$/, '');
+
+  if (baseSku === 'GAD-ADAPTER-01') {
+    return [
+      {
+        id: `${sku}-a12`,
+        sku,
+        type: 'sale',
+        at: '2026-08-16T13:42:00',
+        summary: `Sold 1 × ${name}`,
+        detail: 'EcoCash · completed · coil B4 dispensed OK',
+        qtyDelta: -1,
+        stockAfter: stock,
+        amount: price,
+        reference: 'RCP-90211',
+        actor: 'Kiosk customer',
+      },
+      {
+        id: `${sku}-a11`,
+        sku,
+        type: 'sale',
+        at: '2026-08-16T11:18:00',
+        summary: `Sold 1 × ${name}`,
+        detail: 'Card · completed',
+        qtyDelta: -1,
+        stockAfter: stock + 1,
+        amount: price,
+        reference: 'RCP-90188',
+        actor: 'Kiosk customer',
+      },
+      {
+        id: `${sku}-a10`,
+        sku,
+        type: 'adjustment',
+        at: '2026-08-16T09:04:00',
+        summary: 'Cycle-count variance',
+        detail: `Slot ${slot} counted short vs expected on-hand. Written off as shrinkage.`,
+        qtyDelta: -1,
+        stockAfter: stock + 2,
+        amount: null,
+        reference: 'ADJ-4418',
+        actor: 'Attendant T. Moyo',
+      },
+      {
+        id: `${sku}-a09`,
+        sku,
+        type: 'fault',
+        at: '2026-08-15T18:22:00',
+        summary: 'Jam cleared — unit returned to coil',
+        detail: 'Motor stall on slot B4. Attendant cleared jam; product not taken.',
+        qtyDelta: 1,
+        stockAfter: stock + 3,
+        amount: null,
+        reference: 'FLT-2291',
+        actor: 'Attendant T. Moyo',
+      },
+      {
+        id: `${sku}-a08`,
+        sku,
+        type: 'refund',
+        at: '2026-08-15T18:21:00',
+        summary: 'Refund after failed dispense',
+        detail: 'Partial sale reversed to card. Stock restored when jam was cleared.',
+        qtyDelta: null,
+        stockAfter: stock + 2,
+        amount: price,
+        reference: 'RCP-90140',
+        actor: 'System',
+      },
+      {
+        id: `${sku}-a07`,
+        sku,
+        type: 'sale',
+        at: '2026-08-15T18:20:00',
+        summary: `Sale attempt — 1 × ${name}`,
+        detail: 'Card authorised, then coil jam. Marked partial.',
+        qtyDelta: -1,
+        stockAfter: stock + 2,
+        amount: price,
+        reference: 'RCP-90140',
+        actor: 'Kiosk customer',
+      },
+      {
+        id: `${sku}-a06`,
+        sku,
+        type: 'sale',
+        at: '2026-08-15T14:05:00',
+        summary: `Sold 1 × ${name}`,
+        detail: 'QR / Scan to Pay · completed',
+        qtyDelta: -1,
+        stockAfter: stock + 3,
+        amount: price,
+        reference: 'RCP-90112',
+        actor: 'Kiosk customer',
+      },
+      {
+        id: `${sku}-a05`,
+        sku,
+        type: 'restock',
+        at: '2026-08-15T08:10:00',
+        summary: 'GRV restock +8',
+        detail: 'Warehouse Harare CBD · GRV accepted, 0 damaged.',
+        qtyDelta: 8,
+        stockAfter: stock + 4,
+        amount: null,
+        reference: 'GRV-4412',
+        actor: 'Attendant N. Dube',
+      },
+      {
+        id: `${sku}-a04`,
+        sku,
+        type: 'system',
+        at: '2026-08-14T19:02:00',
+        summary: 'Slot hit par level',
+        detail: `On-hand fell to par. Refill recommended for ${slot}.`,
+        qtyDelta: null,
+        stockAfter: stock - 4 < 0 ? 1 : stock - 4,
+        amount: null,
+        reference: 'SYS-PAR',
+        actor: 'Machine',
+      },
+      {
+        id: `${sku}-a03`,
+        sku,
+        type: 'sale',
+        at: '2026-08-14T16:48:00',
+        summary: `Sold 2 × ${name}`,
+        detail: 'EcoCash · completed · two consecutive vends',
+        qtyDelta: -2,
+        stockAfter: 2,
+        amount: price * 2,
+        reference: 'RCP-90077',
+        actor: 'Kiosk customer',
+      },
+      {
+        id: `${sku}-a02`,
+        sku,
+        type: 'price',
+        at: '2026-08-14T12:11:00',
+        summary: 'Price updated $5.50 → $6.00',
+        detail: 'Admin price list sync. Tax-inclusive USD.',
+        qtyDelta: null,
+        stockAfter: 4,
+        amount: 6,
+        reference: 'PRC-118',
+        actor: 'Admin R. Chikore',
+      },
+      {
+        id: `${sku}-a01`,
+        sku,
+        type: 'adjustment',
+        at: '2026-08-13T10:30:00',
+        summary: 'Damaged unit written off',
+        detail: 'Packaging crushed in coil. Removed from saleable stock.',
+        qtyDelta: -1,
+        stockAfter: 4,
+        amount: 5.5,
+        reference: 'ADJ-4388',
+        actor: 'Attendant T. Moyo',
+      },
+      {
+        id: `${sku}-a00`,
+        sku,
+        type: 'restock',
+        at: '2026-08-12T07:55:00',
+        summary: 'Opening GRV +12',
+        detail: `Slot ${slot} loaded from tote GAD-12. Capacity set.`,
+        qtyDelta: 12,
+        stockAfter: 12,
+        amount: null,
+        reference: 'GRV-4390',
+        actor: 'Attendant N. Dube',
+      },
+    ];
+  }
+
+  const seed = sku.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+  const sold = 1 + (seed % 3);
+  return [
+    {
+      id: `${sku}-g4`,
+      sku,
+      type: 'sale',
+      at: '2026-08-16T10:20:00',
+      summary: `Sold ${sold} × ${name}`,
+      detail: 'EcoCash · completed',
+      qtyDelta: -sold,
+      stockAfter: stock,
+      amount: price * sold,
+      reference: `RCP-${80000 + (seed % 999)}`,
+      actor: 'Kiosk customer',
+    },
+    {
+      id: `${sku}-g3`,
+      sku,
+      type: 'adjustment',
+      at: '2026-08-15T15:40:00',
+      summary: 'Manual stock correction',
+      detail: `Attendant aligned on-hand to coil count for ${slot}.`,
+      qtyDelta: seed % 2 === 0 ? -1 : 1,
+      stockAfter: stock + sold,
+      amount: null,
+      reference: `ADJ-${4000 + (seed % 80)}`,
+      actor: 'Attendant T. Moyo',
+    },
+    {
+      id: `${sku}-g2`,
+      sku,
+      type: 'restock',
+      at: '2026-08-14T08:05:00',
+      summary: `GRV restock +${6 + (seed % 5)}`,
+      detail: 'Warehouse refill · 0 damaged',
+      qtyDelta: 6 + (seed % 5),
+      stockAfter: Math.min(item?.capacity ?? 12, stock + sold + 6),
+      amount: null,
+      reference: `GRV-${4300 + (seed % 50)}`,
+      actor: 'Attendant N. Dube',
+    },
+    {
+      id: `${sku}-g1`,
+      sku,
+      type: 'price',
+      at: '2026-08-12T11:00:00',
+      summary: `Price set to $${price.toFixed(2)}`,
+      detail: 'Catalogue sync',
+      qtyDelta: null,
+      stockAfter: null,
+      amount: price,
+      reference: `PRC-${100 + (seed % 40)}`,
+      actor: 'Admin R. Chikore',
+    },
+  ];
+}
+
 function buildInventoryForKiosk(seed: number): AdminInventoryItem[] {
-  return MOCK_PRODUCTS.map((p, i) => {
-    const capacity = Math.max(p.stockAvailable + 5, 15);
-    const parLevel = Math.ceil(capacity * 0.25);
-    const variance = ((seed + i) % 5) - 2;
-    const stock = Math.max(0, Math.min(capacity, p.stockAvailable + variance));
-    return {
-      sku: p.sku,
-      name: p.name,
-      category: p.category,
-      slotCode: p.slotCode,
-      price: p.price,
-      stock,
-      capacity,
-      parLevel,
-      imageUrl: p.imageUrl,
-      status: deriveInventoryStatus(stock, parLevel),
-    };
-  });
+  const trays = ['A', 'B', 'C', 'D', 'E', 'F'];
+  const columns = 8;
+  const items: AdminInventoryItem[] = [];
+
+  for (const tray of trays) {
+    for (let col = 1; col <= columns; col++) {
+      const index = items.length;
+      const product = MOCK_PRODUCTS[index % MOCK_PRODUCTS.length];
+      const slotCode = `${tray}${col}`;
+      const sku = index < MOCK_PRODUCTS.length ? product.sku : `${product.sku}-${slotCode}`;
+      const capacity = 8 + ((seed + index) % 13);
+      const parLevel = Math.max(1, Math.ceil(capacity * 0.25));
+      let stock = Math.max(
+        0,
+        Math.min(capacity, product.stockAvailable + ((seed + index) % 7) - 3),
+      );
+      if ((index + seed) % 11 === 0) {
+        stock = 0;
+      } else if ((index + seed) % 7 === 0) {
+        stock = Math.min(stock, parLevel);
+      }
+      items.push({
+        sku,
+        name: product.name,
+        category: product.category,
+        slotCode,
+        price: product.price,
+        stock,
+        capacity,
+        parLevel,
+        imageUrl: product.imageUrl,
+        status: deriveInventoryStatus(stock, parLevel),
+      });
+    }
+  }
+
+  return items;
 }
 
 function buildSalesForKiosk(kioskId: string, seed: number): AdminSale[] {
@@ -169,16 +428,22 @@ export class AdminDataService {
     return of(updated).pipe(delay(120));
   }
 
-  deleteSale(id: string): Observable<boolean> {
-    const before = this.currentState().sales.length;
-    this.patchCurrentState((state) => {
-      state.sales = state.sales.filter((s) => s.id !== id);
-    });
-    return of(this.currentState().sales.length !== before).pipe(delay(80));
+  /** Sales are immutable records — never removed. Use status `voided` instead. */
+  deleteSale(_id: string): Observable<boolean> {
+    return of(false);
   }
 
   getInventory(): Observable<AdminInventoryItem[]> {
     return this.inventory$;
+  }
+
+  getInventoryActivity(sku: string): Observable<InventoryActivityEvent[]> {
+    return this.selectedKioskId.pipe(
+      switchMap((id) => {
+        const item = this.states.get(id)?.inventory.find((row) => row.sku === sku);
+        return of(activityForSku(sku, item)).pipe(delay(80));
+      }),
+    );
   }
 
   createInventoryItem(input: AdminInventoryInput): Observable<AdminInventoryItem | null> {
@@ -568,7 +833,11 @@ function financeFor(kioskId: string, sales: AdminSale[]): AdminFinanceSnapshot {
     location: kiosk.location,
     currency: 'USD',
     generatedAt: new Date().toISOString(),
-    periodLabel: 'Today · 16 Jul 2026',
+    periodLabel: `Today · ${new Date().toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })}`,
     summary: {
       grossRevenue,
       refundsVoids,
