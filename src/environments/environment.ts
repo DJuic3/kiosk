@@ -10,9 +10,9 @@ export const environment = {
   machineId: 'KIOSK-001',
   sessionTimeoutSeconds: 120,
   /** Browser MQTT (WebSocket) — same broker as machines, LAN IP */
-  mqttWsUrl: 'ws://10.251.82.155:9001',
-  mqttMachineId: 'MACHINE002',
+  mqttWsUrl: 'ws://192.168.55.248:9001',
+  mqttMachineId: 'MACHINE001',
   /** Machines / mosquitto_pub use this host:port (plain MQTT) */
-  mqttHost: '10.251.82.155',
+  mqttHost: '192.168.55.248',
   mqttPort: 1883,
 };
