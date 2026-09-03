@@ -84,30 +84,74 @@ import { TouchButtonComponent } from '../../../shared/components/touch-button/to
         <article class="panel">
           <h2>Dispense command</h2>
           <label>
-            Slot / selection
-            <input type="number" min="1" [(ngModel)]="selection" (ngModelChange)="onSelectionChange()" />
+            Add slot / selection
+            <div class="add-row">
+              <input
+                type="number"
+                min="1"
+                [(ngModel)]="selectionDraft"
+                (keydown.enter)="$event.preventDefault(); addSelection()"
+              />
+              <app-touch-button variant="secondary" (pressed)="addSelection()">Add</app-touch-button>
+            </div>
           </label>
+          <div class="selections">
+            <div class="selections__head">
+              <span>Selections ({{ selections.length }})</span>
+              @if (selections.length) {
+                <button type="button" class="linkish" (click)="clearSelections()">Clear</button>
+              }
+            </div>
+            <div class="chips">
+              @for (slot of selections; track $index) {
+                <span class="chip">
+                  {{ slot }}
+                  <button type="button" (click)="removeSelection($index)" aria-label="Remove selection">×</button>
+                </span>
+              } @empty {
+                <p class="empty-inline">No slots yet — add one or use a quick slot.</p>
+              }
+            </div>
+          </div>
+          <div class="quick">
+            @for (slot of quickSlots; track slot) {
+              <button type="button" (click)="addQuickSlot(slot)">+ {{ slot }}</button>
+            }
+          </div>
           <label>
             Topic (auto)
             <input [value]="dispenseTopic()" readonly />
           </label>
           <label>
             JSON payload (editable)
-            <textarea [(ngModel)]="payloadJson" rows="3"></textarea>
+            <textarea
+              [(ngModel)]="payloadJson"
+              rows="3"
+              (ngModelChange)="onPayloadEdited()"
+            ></textarea>
           </label>
-          <app-touch-button
-            variant="primary"
-            [block]="true"
-            [disabled]="control.mqtt.state() !== 'connected'"
-            (pressed)="sendDispense()"
-          >
-            Send dispense
-          </app-touch-button>
-          <div class="quick">
-            @for (slot of quickSlots; track slot) {
-              <button type="button" (click)="setSlot(slot)">Slot {{ slot }}</button>
-            }
+          <div class="actions">
+            <app-touch-button
+              variant="primary"
+              [block]="true"
+              [disabled]="control.mqtt.state() !== 'connected' || selections.length === 0"
+              (pressed)="sendDispense()"
+            >
+              Send dispense ({{ selections.length }})
+            </app-touch-button>
+            <app-touch-button
+              variant="danger"
+              [block]="true"
+              [disabled]="control.mqtt.state() !== 'connected'"
+              (pressed)="clearQueue()"
+            >
+              Clear queue
+            </app-touch-button>
           </div>
+          <p class="hint">
+            Clear queue publishes <code>commands/cancel</code> — stops pending dispenses on the
+            machine (same as when it reports <code>machine_busy</code>).
+          </p>
         </article>
       </div>
 
@@ -302,6 +346,85 @@ import { TouchButtonComponent } from '../../../shared/components/touch-button/to
       line-height: 1.45;
     }
 
+    .add-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: stretch;
+    }
+
+    .selections {
+      display: grid;
+      gap: 8px;
+    }
+
+    .selections__head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+
+    .linkish {
+      border: 0;
+      background: none;
+      color: var(--primary);
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      min-height: 36px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px 6px 12px;
+      border-radius: 999px;
+      background: var(--primary-soft);
+      color: var(--primary);
+      font-weight: 800;
+      font-size: 0.9rem;
+    }
+
+    .chip button {
+      width: 22px;
+      height: 22px;
+      border: 0;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      font: inherit;
+      font-weight: 800;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    .empty-inline {
+      margin: 0;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .actions {
+      display: grid;
+      gap: 10px;
+    }
+
+    .hint code {
+      font-family: ui-monospace, monospace;
+      font-size: 0.82em;
+    }
+
     .quick {
       display: flex;
       flex-wrap: wrap;
@@ -408,12 +531,16 @@ export class MachineControlComponent implements OnInit, OnDestroy {
   brokerProtocol: 'ws' | 'wss' = 'ws';
   brokerUrl = environment.mqttWsUrl;
   machineId = environment.mqttMachineId;
-  selection = 4;
+  /** Draft value for the “Add slot” field */
+  selectionDraft = 4;
+  /** Ordered coil/selection numbers sent in the dispense payload */
+  selections: number[] = [4];
   payloadJson = '';
   readonly quickSlots = [1, 6, 12, 18, 24];
 
   private connectSub: Subscription | null = null;
   private urlEditedManually = false;
+  private syncingPayload = false;
 
   ngOnInit(): void {
     this.loadSettings();
@@ -478,26 +605,75 @@ export class MachineControlComponent implements OnInit, OnDestroy {
     this.persistSettings();
   }
 
-  onSelectionChange(): void {
+  addSelection(): void {
+    const slot = Number(this.selectionDraft);
+    if (!Number.isFinite(slot) || slot < 1) {
+      return;
+    }
+    this.selections = [...this.selections, Math.floor(slot)];
     this.syncPayload();
   }
 
-  setSlot(slot: number): void {
-    this.selection = slot;
+  addQuickSlot(slot: number): void {
+    this.selections = [...this.selections, slot];
+    this.selectionDraft = slot;
     this.syncPayload();
+  }
+
+  removeSelection(index: number): void {
+    this.selections = this.selections.filter((_, i) => i !== index);
+    this.syncPayload();
+  }
+
+  clearSelections(): void {
+    this.selections = [];
+    this.syncPayload();
+  }
+
+  onPayloadEdited(): void {
+    if (this.syncingPayload) {
+      return;
+    }
+    try {
+      const parsed = JSON.parse(this.payloadJson) as { selections?: unknown };
+      if (!Array.isArray(parsed.selections)) {
+        return;
+      }
+      const next = parsed.selections
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value >= 1)
+        .map((value) => Math.floor(value));
+      this.selections = next;
+    } catch {
+      // keep typing invalid JSON until Send / next sync
+    }
   }
 
   sendDispense(): void {
-    let selections = [this.selection];
+    let selections = [...this.selections];
     try {
       const parsed = JSON.parse(this.payloadJson) as { selections?: number[] };
-      selections = parsed.selections ?? selections;
+      if (Array.isArray(parsed.selections) && parsed.selections.length > 0) {
+        selections = parsed.selections
+          .map((value) => Number(value))
+          .filter((value) => Number.isFinite(value) && value >= 1)
+          .map((value) => Math.floor(value));
+        this.selections = selections;
+      }
     } catch {
       this.syncPayload();
-      selections = [this.selection];
+      selections = [...this.selections];
+    }
+
+    if (selections.length === 0) {
+      return;
     }
 
     this.control.sendDispenseCommand(selections, this.machineId).subscribe();
+  }
+
+  clearQueue(): void {
+    this.control.sendCancelCommand(this.machineId).subscribe();
   }
 
   clearLog(): void {
@@ -509,7 +685,9 @@ export class MachineControlComponent implements OnInit, OnDestroy {
   }
 
   private syncPayload(): void {
-    this.payloadJson = this.control.buildDispensePayload([this.selection]);
+    this.syncingPayload = true;
+    this.payloadJson = this.control.buildDispensePayload(this.selections);
+    this.syncingPayload = false;
   }
 
   private settings() {

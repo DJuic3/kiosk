@@ -127,6 +127,11 @@ export class MachineControlService {
     return `vmc/${machineId.trim()}/commands/dispense`;
   }
 
+  /** Clears pending dispense queue on the physical machine (ARAK cancel). */
+  cancelTopic(machineId: string): string {
+    return `vmc/${machineId.trim()}/commands/cancel`;
+  }
+
   buildDispensePayload(selections: number[]): string {
     return JSON.stringify({ selections });
   }
@@ -280,6 +285,28 @@ export class MachineControlService {
 
           this.mqtt.publish(topic, payload);
           this.appendLog({ topic, payload, at: new Date().toISOString() }, true, 'mqtt');
+        },
+        error: (err) => subscriber.error(err),
+      });
+    });
+  }
+
+  /** Clears / cancels the machine’s pending dispense queue. */
+  sendCancelCommand(machineId?: string): Observable<MqttMessage> {
+    const settings = this.loadSettings();
+    const id = (machineId ?? settings.machineId).trim();
+    const topic = this.cancelTopic(id);
+    const payload = '{}';
+
+    return new Observable((subscriber) => {
+      this.connect(settings).subscribe({
+        next: () => {
+          this.mqtt.subscribe(`vmc/${id}/#`);
+          this.mqtt.publish(topic, payload);
+          const msg: MqttMessage = { topic, payload, at: new Date().toISOString() };
+          this.appendLog(msg, true, 'mqtt');
+          subscriber.next(msg);
+          subscriber.complete();
         },
         error: (err) => subscriber.error(err),
       });
