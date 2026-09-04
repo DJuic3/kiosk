@@ -9,10 +9,10 @@ export const environment = {
   useMqttDispense: true,
   machineId: 'KIOSK-001',
   sessionTimeoutSeconds: 120,
-  /** Browser MQTT (WebSocket) — same broker as machines, LAN IP */
-  mqttWsUrl: 'ws://10.251.82.86:9001',
+  /** Browser MQTT (WebSocket) — company broker (machines use plain MQTT :1883) */
+  mqttWsUrl: 'ws://yamurailearnx.econet.co.zw:9001',
   mqttMachineId: 'MACHINE001',
   /** Machines / mosquitto_pub use this host:port (plain MQTT) */
-  mqttHost: '10.251.82.86',
+  mqttHost: 'yamurailearnx.econet.co.zw',
   mqttPort: 1883,
 };

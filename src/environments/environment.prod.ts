@@ -6,8 +6,8 @@ export const environment = {
   useMqttDispense: true,
   machineId: 'KIOSK-001',
   sessionTimeoutSeconds: 120,
-  mqttWsUrl: 'ws://10.251.82.86:9001',
+  mqttWsUrl: 'ws://yamurailearnx.econet.co.zw:9001',
   mqttMachineId: 'MACHINE001',
-  mqttHost: '10.251.82.86',
+  mqttHost: 'yamurailearnx.econet.co.zw',
   mqttPort: 1883,
 };
