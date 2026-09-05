@@ -6,7 +6,9 @@
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test"
+    "test": "ng test",
+    "virtual-machine": "node scripts/virtual-vending-machine.mjs",
+    "virtual-machine:yamurai": "MQTT_URL=wss://yamurailearnx.econet.co.zw:2052/mqtt node scripts/virtual-vending-machine.mjs"
   },
   "private": true,
   "dependencies": {
@@ -32,6 +34,7 @@
     "karma-coverage": "~2.2.0",
     "karma-jasmine": "~5.1.0",
     "karma-jasmine-html-reporter": "~2.1.0",
+    "mqtt": "^5.15.2",
     "typescript": "~5.7.2"
   },
   "allowScripts": {

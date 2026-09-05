@@ -17,6 +17,7 @@ import { TouchButtonComponent } from '../../../shared/components/touch-button/to
         <div>
           <a routerLink="/" class="back">← Kiosk</a>
           <h1>Machine control</h1>
+          <p><a routerLink="/dev/cabinet">Open virtual cabinet →</a></p>
         </div>
         <span class="status" [attr.data-state]="control.mqtt.state()">{{ stateLabel() }}</span>
       </header>
@@ -74,11 +75,11 @@ import { TouchButtonComponent } from '../../../shared/components/touch-button/to
             }
           </div>
           <p class="hint">
-            <strong>Connect</strong> joins the MQTT broker (Docker Mosquitto), not the vending machine.
-            The machine is a separate client on port <strong>1883</strong>. If it is off, this page still
-            connects — dispense commands will sit on the broker until the machine comes online.
+            <strong>Connect</strong> joins the MQTT broker over <strong>WebSocket</strong>, not the
+            vending machine. Machines use plain MQTT on port <strong>{{ machineMqttPort }}</strong>. If the machine is
+            offline, this page can still connect — dispense commands wait on the broker.
           </p>
-          <p class="hint mono">Machine MQTT reference: mqtt://{{ brokerHost }}:1883</p>
+          <p class="hint mono">Machine MQTT reference: mqtt://{{ brokerHost }}:{{ machineMqttPort }}</p>
         </article>
 
         <article class="panel">
@@ -531,6 +532,7 @@ export class MachineControlComponent implements OnInit, OnDestroy {
   brokerProtocol: 'ws' | 'wss' = 'ws';
   brokerUrl = environment.mqttWsUrl;
   machineId = environment.mqttMachineId;
+  readonly machineMqttPort = environment.mqttPort;
   /** Draft value for the “Add slot” field */
   selectionDraft = 4;
   /** Ordered coil/selection numbers sent in the dispense payload */
@@ -716,15 +718,21 @@ export class MachineControlComponent implements OnInit, OnDestroy {
 
   private parseUrlIntoFields(url: string): void {
     try {
-      const parsed = new URL(url.trim());
+      let raw = url.trim();
+      if (/^https:\/\//i.test(raw)) {
+        raw = raw.replace(/^https:\/\//i, 'wss://');
+      } else if (/^http:\/\//i.test(raw)) {
+        raw = raw.replace(/^http:\/\//i, 'ws://');
+      }
+      const parsed = new URL(raw);
       this.brokerProtocol = parsed.protocol === 'wss:' ? 'wss' : 'ws';
       this.brokerHost = parsed.hostname;
       let port = parsed.port ? Number(parsed.port) : this.brokerProtocol === 'wss' ? 443 : 9001;
       if (port === 1883) {
         port = 9001;
-        this.brokerUrl = `${this.brokerProtocol}://${this.brokerHost}:${port}`;
       }
       this.brokerPort = port;
+      this.brokerUrl = `${this.brokerProtocol}://${this.brokerHost}:${port}`;
       this.urlEditedManually = false;
     } catch {
       // keep current field values

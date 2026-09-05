@@ -1,0 +1,16 @@
+{
+  "MACHINE_ID": "MACHINE001",
+  "SERIAL": {
+    "PORT": "/dev/ttyVending",
+    "BAUDRATE": 57600
+  },
+  "MQTT": {
+    "HOST": "yamurailearnx.econet.co.zw",
+    "PORT": 2052
+  },
+  "LOGS": {
+    "PATH": "/opt/vending-sdk/logs.json",
+    "DEFAULT_LIMIT": 100,
+    "MAX_LIMIT": 500
+  }
+}

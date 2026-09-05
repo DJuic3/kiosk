@@ -81,6 +81,7 @@ import { CATEGORIES } from '../../../core/data/mock-catalog';
         <div class="attract__links" (click)="$event.stopPropagation()">
           <a routerLink="/attendant" class="staff">Staff</a>
           <a routerLink="/dev/machine" class="staff">Machine control</a>
+          <a routerLink="/dev/cabinet" class="staff">Virtual cabinet</a>
           <a routerLink="/admin/login" class="admin-btn">Admin login</a>
         </div>
         <span class="attract__tagline">Pay · Collect · Done — usually under a minute</span>

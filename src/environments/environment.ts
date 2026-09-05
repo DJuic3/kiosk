@@ -9,10 +9,14 @@ export const environment = {
   useMqttDispense: true,
   machineId: 'KIOSK-001',
   sessionTimeoutSeconds: 120,
-  /** Browser MQTT (WebSocket) — company broker (machines use plain MQTT :1883) */
-  mqttWsUrl: 'ws://yamurailearnx.econet.co.zw:9001',
+  /** Browser / cabinet — Yamurai reverse proxy (WSS, no VPN) */
+  mqttWsUrl: 'wss://yamurailearnx.econet.co.zw:2052/mqtt',
   mqttMachineId: 'MACHINE001',
-  /** Machines / mosquitto_pub use this host:port (plain MQTT) */
+  /**
+   * Machine SDK uses plain TCP MQTT.
+   * Only works if nginx stream{} proxies :2052 → mosquitto :1883.
+   * If :2052 is HTTPS/WSS only, SDK needs a separate stream port or WS support.
+   */
   mqttHost: 'yamurailearnx.econet.co.zw',
-  mqttPort: 1883,
+  mqttPort: 2052,
 };

@@ -25,16 +25,23 @@ export class MqttWsService {
     this.state.set('connecting');
     this.error.set('');
 
-    if (/:1883(?:\/|$)/.test(brokerWsUrl)) {
+    const url = this.normalizeBrokerUrl(brokerWsUrl);
+    if (!url) {
+      this.state.set('error');
+      this.error.set('Invalid broker URL — use ws://host:9001 or wss://host:9001');
+      return;
+    }
+
+    if (/:1883(?:\/|$)/.test(url)) {
       this.state.set('error');
       this.error.set(
-        'Port 1883 is plain MQTT (for vending PCs). Use WebSocket port 9001, e.g. ws://10.251.82.128:9001',
+        'Port 1883 is plain MQTT (for vending PCs). This page needs WebSocket, e.g. ws://host:9001',
       );
       return;
     }
 
     try {
-      this.socket = new WebSocket(brokerWsUrl, 'mqtt');
+      this.socket = new WebSocket(url, 'mqtt');
     } catch (err) {
       this.state.set('error');
       this.error.set(err instanceof Error ? err.message : 'Invalid broker URL');
@@ -54,7 +61,9 @@ export class MqttWsService {
 
     this.socket.onerror = () => {
       this.state.set('error');
-      this.error.set('WebSocket error — is Docker Mosquitto running on port 9001?');
+      this.error.set(
+        `WebSocket error connecting to ${url} — broker must expose MQTT over WebSocket (not plain HTTP/HTTPS).`,
+      );
     };
 
     this.socket.onclose = () => {
@@ -67,6 +76,29 @@ export class MqttWsService {
         this.state.set('closed');
       }
     };
+  }
+
+  /** Accepts ws/wss; rewrites http→ws and https→wss. */
+  private normalizeBrokerUrl(raw: string): string | null {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return null;
+    }
+    try {
+      const withScheme = /^(https?|wss?):\/\//i.test(trimmed) ? trimmed : `ws://${trimmed}`;
+      const parsed = new URL(withScheme);
+      if (parsed.protocol === 'http:') {
+        parsed.protocol = 'ws:';
+      } else if (parsed.protocol === 'https:') {
+        parsed.protocol = 'wss:';
+      }
+      if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
+        return null;
+      }
+      return parsed.toString().replace(/\/$/, '');
+    } catch {
+      return null;
+    }
   }
 
   disconnect(): void {

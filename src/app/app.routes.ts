@@ -85,6 +85,13 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'dev/cabinet',
+    loadComponent: () =>
+      import('./features/dev/virtual-cabinet/virtual-cabinet.component').then(
+        (m) => m.VirtualCabinetComponent,
+      ),
+  },
+  {
     path: 'admin/login',
     loadComponent: () =>
       import('./features/admin/admin-login/admin-login.component').then(
